@@ -1,0 +1,20 @@
+[package]
+name = "zarc-cli"
+version = "0.1.0"
+edition = "2021"
+
+authors = ["Félix Saparelli <felix@passcod.name>"]
+license = "Apache-2.0 OR MIT"
+description = "Archive format based on Zstd: CLI tool"
+keywords = ["archive", "file-format", "zstd", "zarc"]
+categories = ["command-line-utilities"]
+
+documentation = "https://github.com/passcod/zarc"
+repository = "https://github.com/passcod/zarc"
+readme = "README.md"
+
+[dependencies]
+clap = { version = "4.4.11", features = ["derive", "cargo", "wrap_help"] }
+memmap2 = "0.9.3"
+tracing-subscriber = "0.3.18"
+zarc = { version = "0.1.0", path = "../lib" }

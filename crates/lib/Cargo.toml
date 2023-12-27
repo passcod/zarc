@@ -1,0 +1,19 @@
+[package]
+name = "zarc"
+version = "0.1.0"
+edition = "2021"
+
+authors = ["Félix Saparelli <felix@passcod.name>"]
+license = "Apache-2.0 OR MIT"
+description = "Archive format based on Zstd"
+keywords = ["archive", "file-format", "zstd", "zarc"]
+categories = ["encoding", "compression"]
+
+documentation = "https://github.com/passcod/zarc"
+repository = "https://github.com/passcod/zarc"
+readme = "README.md"
+
+[dependencies]
+deku = "0.16.0"
+tracing = "0.1.40"
+zstd-safe = "7.0.0"

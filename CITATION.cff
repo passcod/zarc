@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: |
+  If you use this software, please cite it using these metadata.
+title: "Zarc: a new archive format as a construction over the Z-standard file format"
+
+version: "0.1.0"
+date-released: 2023-12-27
+
+repository-code: https://github.com/passcod/zarc
+license: Apache-2.0 OR MIT
+
+authors:
+  - family-names: Saparelli
+    given-names: Félix
+    orcid: https://orcid.org/0000-0002-2010-630X
