@@ -15,5 +15,8 @@ readme = "README.md"
 
 [dependencies]
 deku = "0.16.0"
+rmp-serde = "1.1.2"
+rmpv = { version = "1.0.1", features = ["with-serde"] }
+serde = { version = "1.0.193", features = ["derive"] }
 tracing = "0.1.40"
 zstd-safe = "7.0.0"

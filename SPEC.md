@@ -234,6 +234,14 @@ _Map._ **Optional.**
 
 Arbitrary user-provided metadata for this file entry.
 
+#### `r`: File Is Readonly
+
+_Boolean._ **Optional.**
+
+If `true`, the file is marked read-only.
+
+This is a filesystem mode only and has no bearing on Zarc's handling.
+
 #### `m`: POSIX File Mode
 
 _Integer._ **Optional.**
