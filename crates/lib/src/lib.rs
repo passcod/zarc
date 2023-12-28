@@ -562,6 +562,8 @@ pub mod encode {
 						data: vec![0],
 					},
 				);
+				// add 4 to the frame content size
+				frame.frame_content_size[0] += 4;
 
 				// write edited frame
 				use deku::DekuContainerWrite;

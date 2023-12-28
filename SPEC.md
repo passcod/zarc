@@ -100,7 +100,7 @@ The text may be something like:
 
 This is intended to be consumed by Zstd decoders, which will either:
 
-- choke on the zero-byte RLE, or
+- choke on the zero-byte RLE (`zstd`'s CLI tool prints "unsupported format"), or
 - add a human-readable header to the decompressed output which explains to the user why they got nonsense
 
 A Zarc decoder SHOULD check that the first block contains the same magic and version as the Zarc Header, and then MUST discard the frame.
