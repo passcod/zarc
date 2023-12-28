@@ -14,7 +14,11 @@ Zarc is intended to be fairly simple to parse given a zstd decoder, while provid
 - basic deduplication via content-addressing;
 - minimal uncompressed overhead;
 - appending files is reasonably cheap;
-- capable of handling archives larger than memory, or even archives containing more file metadata than would fit in memory.
+- capable of handling archives larger than memory, or even archives containing more file metadata than would fit in memory (allowed by spec but not yet implemented).
+
+## Known issues / limitations
+
+- There's an uncompressed overhead per unique file, so if you have a lot of small files, it can be less efficient compared to tar+zstd which may squash the per-file overhead as well as the file content.
 
 # [Zstd Format]
 
@@ -30,12 +34,12 @@ Here's a quick recap of the zstd format, full specification available at link ab
   - `[magic][header][blocks...][checksum]`
   - Magic is 0xFD2FB528
   - Header is 2-14 bytes, described in spec above
-  - Checksum is optional (mandatory for Zarc), last 4 bytes of xxhash64
+  - Checksum is optional, last 4 bytes of xxhash64
   - Blocks are:
-    - `[last][type][size][data]`
-      - Last is 1 bit (boolean)
-      - Type is 2 bits (enum)
+    - `[size][type][last][data]`
       - Size is 21 bits, unsigned
+      - Type is 2 bits (enum)
+      - Last is 1 bit (boolean)
     - Type describes:
       1. Raw block (`data` is uncompressed, verbatim)
       2. RLE block (`data` is a single byte, `size` is how many times it's repeated verbatim)
@@ -362,14 +366,6 @@ The length of the uncompressed content of the frame in bytes.
 
 Implementations MAY use this to avoid unpacking frames which exceed available memory or storage.
 
-#### `c`: Zstandard Frame Checksum
-
-_Binary._ **Mandatory.**
-
-The 4-bytes value of the `Content_Checksum` field of the Zstandard frame.
-
-Implementations SHOULD check that this value matches the one on the frame.
-
 #### `h`: Frame Content Hash
 
 _Binary._ **Mandatory.**
@@ -427,7 +423,7 @@ That is, the offset of the first byte of the Zarc Directory Header's Skippable F
 7. Build a Frame Lookup Table
     - For each item in **Framelist**:
     - Verify frame digest against frame signature
-    - Insert into hashtable k=Hash, v=(Offset, Size, Checksum)
+    - Insert into hashtable k=Hash, v=(Offset, Size)
 8. Read and extract files from **Filemap** as required.
 
 # Appending
