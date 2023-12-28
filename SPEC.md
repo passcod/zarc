@@ -36,15 +36,15 @@ Here's a quick recap of the zstd format, full specification available at link ab
   - Header is 2-14 bytes, described in spec above
   - Checksum is optional, last 4 bytes of xxhash64
   - Blocks are:
-    - `[size][type][last][data]`
-      - Size is 21 bits, unsigned
-      - Type is 2 bits (enum)
+    - `[last][type][size][data]`
       - Last is 1 bit (boolean)
+      - Type is 2 bits (enum)
+      - Size is 21 bits, unsigned
     - Type describes:
-      1. Raw block (`data` is uncompressed, verbatim)
-      2. RLE block (`data` is a single byte, `size` is how many times it's repeated verbatim)
-      3. Compressed block
-      4. Reserved
+      0. Raw block (`data` is uncompressed, verbatim)
+      1. RLE block (`data` is a single byte, `size` is how many times it's repeated verbatim)
+      2. Compressed block
+      3. Reserved
 - Skippable frames:
   - `[magic][size][data]`
   - Magic is 0x184D2A5? where the last nibble **?** is any value from 0 to F
@@ -100,7 +100,7 @@ The text may be something like:
 
 This is intended to be consumed by Zstd decoders, which will either:
 
-- choke on the zero-byte RLE (`zstd`'s CLI tool prints "unsupported format"), or
+- choke on the zero-byte RLE, or
 - add a human-readable header to the decompressed output which explains to the user why they got nonsense
 
 A Zarc decoder SHOULD check that the first block contains the same magic and version as the Zarc Header, and then MUST discard the frame.
@@ -145,74 +145,57 @@ A directory that is not this exact length MUST be considered corrupt.
 
 This is a Zstandard frame.
 
-It contains a [msgpack](https://msgpack.org)-encoded structure.
-The top level is a map. Element order is insignificant _except_ that the first four items MUST be `v`, `h`, `s`, `k` (in any order).
+It contains a [CBOR](https://cbor.io)-encoded structure.
+The top level is a map with unsigned integer keys. Element order is insignificant _except_ that the first four items MUST be `0` through `3` (in any order).
 
 Implementations MUST ignore keys they do not recognise.
 
-### `v`: Zarc Directory Version
+### `0`: Zarc Directory Version
 
 _Integer._ **Mandatory.**
 
 This must be the value `1`.
 
-### `h`: Hash Algorithm
+### `1`: Hash Algorithm
 
-_String._ **Mandatory.**
+_Integer._ **Mandatory.**
 
 This MUST be one of the following values:
 
-- `b3`: [BLAKE3](https://github.com/BLAKE3-team/BLAKE3) hash function.
+- `0`: not used. This value must not appear.
+- `1`: [BLAKE3](https://github.com/BLAKE3-team/BLAKE3) hash function.
 
 Implementations MAY offer an optional "insecure" mode which ignores hash mismatches or unknown algorithms.
 
-### `s`: Signature Algorithm
+### `2`: Signature Algorithm
 
-_String._ **Mandatory.**
+_Integer._ **Mandatory.**
 
 This MUST be one of the following values:
 
-- `ed25519`: [Ed25519](https://en.wikipedia.org/wiki/EdDSA#Ed25519) signature scheme.
+- `0`: not used. This value must not appear.
+- `1`: [Ed25519](https://en.wikipedia.org/wiki/EdDSA#Ed25519) signature scheme.
 
 Implementations MAY offer an optional "insecure" mode which ignores signature mismatches or unknown algorithms.
 
-### `k`: Signature Public Key
+### `3`: Signature Public Key
 
-_Binary._ **Mandatory.**
+_Byte string._ **Mandatory.**
 
 Public key for the selected signature scheme.
 
-### `u`: User Metadata
+### `5`: Filemap
 
-_Map._ **Optional.**
-
-Arbitrary user-provided metadata for the whole Zarc file.
-
-### `m`: Filemap
-
-_Array._ **Mandatory.**
+_Array of maps._ **Mandatory.**
 
 Each item contains:
 
-#### `h`: Hash of Frame
-
-_Binary._ **Conditional.**
-
-The hash of a frame of content.
-This must be the same value as the `h` field of a **Framelist** item.
-
-Multiple files can reference the same content frame: this provides file-level deduplication.
-
-The algorithm of the hash is described by the **Hash Algorithm** field above.
-
-This may be absent for some special files (described later).
-
-#### `n`: Name
+#### `0`: Name
 
 _Array of Raw._ **Mandatory.**
 
-If items are of the UTF-8 _String_ msgpack type, then they represent UTF-8-encoded Unicode pathname components.
-If items are of the _Binary_ msgpack type instead, then they represent raw (non-Unicode) pathname components.
+If items are of the UTF-8 _Text string_ CBOR type, then they represent UTF-8-encoded Unicode pathname components.
+If items are of the _Byte string_ CBOR type instead, then they represent raw (non-Unicode) pathname components.
 
 Non-Unicode pathnames may not be supported on all filesystems / operating systems.
 
@@ -232,13 +215,20 @@ Pathnames do not encode whether a path is absolute or relative: all paths inside
 It is possible to have several identical pathname in a Zarc Directory.
 Implementations SHOULD provide an option to use the first or last or other selection criteria, but MUST default to preferring the last of a set of identical pathnames.
 
-#### `u`: File User Metadata
+#### `1`: Hash of Frame
 
-_Map._ **Optional.**
+_Binary._ **Conditional.**
 
-Arbitrary user-provided metadata for this file entry.
+The hash of a frame of content.
+This must be the same value as the `h` field of a **Framelist** item.
 
-#### `r`: File Is Readonly
+Multiple files can reference the same content frame: this provides file-level deduplication.
+
+The algorithm of the hash is described by the **Hash Algorithm** field above.
+
+This may be absent for some special files (described later).
+
+#### `2`: File Is Readonly
 
 _Boolean._ **Optional.**
 
@@ -246,49 +236,61 @@ If `true`, the file is marked read-only.
 
 This is a filesystem mode only and has no bearing on Zarc's handling.
 
-#### `m`: POSIX File Mode
+#### `3`: POSIX File Mode
 
-_Integer._ **Optional.**
+_Unsigned integer._ **Optional.**
 
 Unix mode bits as an unsigned 32-bit integer.
 
 If this is not set, implementations SHOULD use a default mode as appropriate.
 
-#### `o`: POSIX File Owner
+#### `4`: POSIX File Owner
 
-_Map._ **Optional.**
+_Array._ **Optional.**
 
 The user that owns this file.
-This is a structure with at least one of:
+This is a structure with at least one of the following types of data:
 
-- `i`: _Integer._ the user ID
-- `n`: _String._ the user name
+- _Unsigned integer._ the user ID
+- _Text string._ the user name as UTF-8
+- _Byte string._ the user name as non-Unicode
+
+There SHOULD NOT be both _Text string_ and _Byte string_ values. If there is, the _Text string_ value wins out.
 
 Implementations SHOULD prefer the name to the ID if there is an existing user named thus on the system with a different ID.
 
-#### `g`: POSIX File Group
+#### `5`: POSIX File Group
 
-_Map._ **Optional.**
+_Array._ **Optional.**
 
 The group that owns this file.
-This is a structure with at least one of:
+This is a structure with at least one of the following types of data:
 
-- `i`: _Integer._ the group ID
-- `n`: _String._ the group name
+- _Unsigned integer._ the group ID
+- _Text string._ the group name as UTF-8
+- _Byte string._ the group name as non-Unicode
+
+There SHOULD NOT be both _Text string_ and _Byte string_ values. If there is, the _Text string_ value wins out.
 
 Implementations SHOULD prefer the name to the ID if there is an existing group named thus on the system with a different ID.
 
-#### `a`: POSIX File Attributes
+#### `10`: File User Metadata
 
-_Map._ **Optional.**
+_Map(text string, CBOR)._ **Optional.**
+
+Arbitrary user-provided metadata for this file entry.
+
+#### `11`: File Attributes
+
+_Map(text string, CBOR)._ **Optional.**
 
 A map of values (typically boolean flags) which keys SHOULD correspond to [file attributes](https://en.wikipedia.org/wiki/Chattr).
 
 Implementations MAY ignore attributes if obtaining or setting them is impossible or impractical.
 
-#### `x`: Extended File Attributes
+#### `12`: Extended File Attributes
 
-_Map._ **Optional.**
+_Map(text string, CBOR)._ **Optional.**
 
 A map of extended attributes (`xattr`).
 
@@ -297,60 +299,59 @@ Zarc imposes no restriction on the format of attribute names, nor on the content
 Implementations MAY ignore extended attributes if obtaining or setting them is impossible or impractical.
 On Linux, implementations MAY assume a `user` namespace for unprefixed keys.
 
-#### `t`: File Timestamps
+#### `20`: File Timestamps
 
-_Map of Timestamp._ **Optional.**
+_Map(unsigned integer, timestamp)._ **Optional.**
 
 Timestamps associated with this file. Any of:
 
-- `c`: ctime or file creation time
-- `m`: mtime or file modification time
-- `a`: atime or file access time — this SHOULD be the access time prior to the Zarc tool reading the file
-- `z`: time the file was stored in this Zarc
+- `0`: time the file was stored in this Zarc
+- `1`: ctime or file creation time
+- `2`: mtime or file modification time
+- `3`: atime or file access time — this SHOULD be the access time prior to the Zarc tool reading the file
 
-Timestamps are stored in the [native msgpack Timestamp extension type](https://github.com/msgpack/msgpack/blob/master/spec.md#timestamp-extension-type).
-They may be in any of the 32-bit (unsigned seconds since epoch), 64-bit (unsigned seconds + nanoseconds since epoch), or 96-bit (signed seconds + nanoseconds) precisions.
+Timestamps can be stored in either:
+- [RFC3339 in _text string_ with semantic tag `0`](https://www.rfc-editor.org/rfc/rfc8949.html#name-standard-date-time-string)
+- [seconds from epoch as unsigned or negative integer, or binary64 floating point, with semantic tag `1`](https://www.rfc-editor.org/rfc/rfc8949.html#name-epoch-based-date-time)
 
-Encoding implementations SHOULD map timestamp precision to the highest available from the filesystem.
-Decoding implementations MAY truncate precision to what is practicable for the filesystem.
+#### `30`: Special File Types
 
-#### `z`: Special File Types
-
-_Map._ **Optional.**
+_Array[unsigned integer, ...CBOR]._ **Optional.**
 
 This is a structure which encodes special file types.
 
+The mandatory first array item is the type of the special file.
 Implementations SHOULD ignore unknown or impractical special types.
 
-- `t`: _Integer._ **Mandatory.** Any of:
-  - `0x00` — not needed: normal file.
-  - `0x01` — directory entry.
+  - `1` — directory entry.
     May be used to encode metadata or (x)attributes against a directory.
-  - `0x1?` — link.
-  - `0x10` — internal hardlink.
-    MUST have a `d` field with the pathname of another file contained in this Zarc.
-    MAY have the `h` field in the file entry pointing to the same contents.
-  - `0x11` — external hardlink.
-    MUST have a `d` field with the absolute pathname of a file to hardlink to.
+  - `10` — internal hardlink.
+    MUST be followed by the pathname of another file contained in this Zarc.
+  - `11` — external hardlink.
+    MUST be followed by the absolute pathname of a file to hardlink to.
     Implementations MAY reject this (e.g. for security reasons).
-  - `0x12` — internal symlink.
-    MUST have a `d` field with the pathname of another file contained in this Zarc.
-  - `0x13` — external absolute symlink.
-    MUST have a `d` field with the absolute pathname of a file to symlink to.
+  - `12` — internal symlink.
+    MUST be followed by the pathname of another file contained in this Zarc.
+  - `13` — external absolute symlink.
+    MUST be followed by the absolute pathname of a file to symlink to.
     Implementations MAY reject this (e.g. for security reasons).
-  - `0x14` — external relative symlink.
-    MUST have a `d` field with the relative pathname of a file to symlink to.
+  - `14` — external relative symlink.
+    MUST be followed by the relative pathname of a file to symlink to.
     Implementations MAY reject this (e.g. for security reasons).
 
-- `d`: _Raw or Array of Raw_. **Conditional.** Destination pathname for links. Either an absolute or relative full pathname with platform-specific separators, or an array of components as described earlier. Unlike the Name field, `.` and `..` components are allowed.
+Pathnames (as the conditional second array item) are either:
+- _Byte string_ or _Text string_. An absolute or relative full pathname with platform-specific separators;
+- _Array(byte or text string)._ An array of components as for Filemap Names, except that `.` and `..` components are allowed.
 
-### `l`: Framelist
+The second form is preferred, for portability.
 
-_Array._ **Mandatory.**
+### `5`: Framelist
+
+_Array of maps._ **Mandatory.**
 
 Each item contains:
 
-#### `o`: Frame Offset
+#### `0`: Frame Offset
 
 _Integer._ **Mandatory.**
 
@@ -358,15 +359,7 @@ The offset in bytes from the start of the Zarc file to the first byte of the Zst
 
 There MUST NOT be duplicate Frame Offsets in the Framelist.
 
-#### `n`: Uncompressed Byte Length
-
-_Integer._ **Mandatory.**
-
-The length of the uncompressed content of the frame in bytes.
-
-Implementations MAY use this to avoid unpacking frames which exceed available memory or storage.
-
-#### `h`: Frame Content Hash
+#### `1`: Frame Content Hash
 
 _Binary._ **Mandatory.**
 
@@ -374,13 +367,27 @@ The digest of the frame contents using the algorithm defined at the top level.
 
 Implementations MUST check that frame contents match this digest (unless "insecure" mode is used).
 
-#### `s`: Frame Content Signature
+#### `2`: Frame Content Signature
 
 _Binary._ **Mandatory.**
 
 A signature computed over the Frame Content Hash using the algorithm defined at the top level.
 
 Implementations MUST check that the signature is valid (unless "insecure" mode is used).
+
+#### `3`: Uncompressed Byte Length
+
+_Integer._ **Mandatory.**
+
+The length of the uncompressed content of the frame in bytes.
+
+Implementations MAY use this to avoid unpacking frames which exceed available memory or storage.
+
+### `10`: User Metadata
+
+_Map(text string, CBOR)._ **Optional.**
+
+Arbitrary user-provided metadata for the whole Zarc file.
 
 ## Zarc EOF Trailer
 
@@ -413,8 +420,8 @@ That is, the offset of the first byte of the Zarc Directory Header's Skippable F
     - Collect uncompressed directory length
 5. Uncompress Zarc Directory
     - If not enough memory is available, do next steps streaming instead
-6. Read first four fields of msgpack, then stop
-    - Check they are `v`, `h`, `s`, `k` (in any order)
+6. Read first four fields of CBOR map, then stop
+    - Check they are `0` through `3` (in any order)
     - Verify version
     - Initialise cryptography
     - Verify digest against signature
