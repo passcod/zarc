@@ -21,36 +21,6 @@ Zarc provides some interesting features, like:
 
 Here's a [specification](./SPEC.md) of the format.
 
-## TODO
-
-- [x] `zarc pack`
-  - [ ] `--append`
-  - [ ] `-U` and `-u` flags to set user metadata
-  - [ ] `--attest` and `--attest-file` to sign external content
-  - [ ] `--level` to set compression level
-  - [ ] `--zstd` to set Zstd parameters
-  - [ ] Pack linux attributes
-  - [ ] Pack linux xattrs
-  - [ ] Pack mac attributes
-  - [ ] Pack mac xattrs
-  - [x] Pack windows attributes
-  - [ ] Pack windows alternate data stream extended attributes
-- [x] `zarc debug`
-- [ ] `zarc unpack`
-  - [ ] `--key` to check public key matches
-  - [ ] `--attest` and `--attest-file` to check external signature
-  - [ ] Unpack linux attributes
-  - [ ] Unpack linux xattrs
-  - [ ] Unpack mac attributes
-  - [ ] Unpack mac xattrs
-  - [ ] Unpack windows attributes
-  - [ ] Unpack windows alternate data stream extended attributes
-- [ ] `zarc list-files`
-- [ ] Streaming packing
-- [ ] Streaming unpacking
-- [ ] Profile and optimise
-- [ ] Pure rust zstd?
-
 ## Try it out
 
 ### Install
@@ -68,7 +38,7 @@ As we rely on an unreleased version of [deku](https://github.com/sharksforarms/d
 
 ### Start out
 
-_(Some of the commands shown here don't exist yet.)_
+_(Some of the commands shown here [don't exist yet](#todo).)_
 
 Get started by packing a few files:
 
@@ -274,9 +244,9 @@ Appending to a Zarc regenerates the keypair and re-signs every checksum, so the 
 
 ## Performance
 
-For software that has _not_ been optimised in any way, Zarc is... not that bad.
+Not great.
 
-### 1.4G of node_modules
+### a gigabyte of node_modules
 
 A Node.js's project `node_modules` is typically many small and medium files:
 
@@ -295,12 +265,12 @@ max 1           min 1   mean 1          median 1
 #### Baseline: tar + zstd
 
 ```console
-$ /usr/bin/time tar cf node_modules.tar.zst node_modules
-1.31user 3.36system 0:05.92elapsed 78%CPU (0avgtext+0avgdata 4128maxresident)k
+$ /usr/bin/time tar caf node_modules.tar.zst node_modules
+1.31user 3.36system 0:06.92elapsed 78%CPU (0avgtext+0avgdata 4128maxresident)k
 0inputs+2170688outputs (0major+368minor)pagefaults 0swaps
 
 $ dust -sbn0 node_modules.tar.zst
-1.0G ┌── node_modules.tar.zst
+189M ┌── node_modules.tar.zst
 ```
 
 #### Zarc [`5f49f2b`](https://github.com/passcod/zarc/commit/5f49f2b) (2023-12-30)
@@ -314,11 +284,13 @@ $ dust -sbn0 node_modules.zarc
 429M ┌── node_modules.zarc
 ```
 
+4 times slower and 3 times larger... there's improvements to be found!
+
 #### Benchmark
 
 ```console
 $ hyperfine --warmup 2 \
-  'tar cf node_modules.tar.zst node_modules' \
+  'tar caf node_modules.tar.zst node_modules' \
   'zarc pack --output node_modules.zarc node_modules'
 
 Benchmark 1: tar cf node_modules.tar.zst node_modules
@@ -334,4 +306,32 @@ Summary
     3.03 ± 0.24 times faster than 'zarc pack --output node_modules.zarc node_modules'
 ```
 
-3× slower than tar+zstd for 55% better compression... not bad!
+## TODO
+
+- [x] `zarc pack`
+  - [ ] `--append`
+  - [ ] `-U` and `-u` flags to set user metadata
+  - [ ] `--attest` and `--attest-file` to sign external content
+  - [ ] `--level` to set compression level
+  - [ ] `--zstd` to set Zstd parameters
+  - [ ] Pack linux attributes
+  - [ ] Pack linux xattrs
+  - [ ] Pack mac attributes
+  - [ ] Pack mac xattrs
+  - [x] Pack windows attributes
+  - [ ] Pack windows alternate data stream extended attributes
+- [x] `zarc debug`
+- [ ] `zarc unpack`
+  - [ ] `--key` to check public key matches
+  - [ ] `--attest` and `--attest-file` to check external signature
+  - [ ] Unpack linux attributes
+  - [ ] Unpack linux xattrs
+  - [ ] Unpack mac attributes
+  - [ ] Unpack mac xattrs
+  - [ ] Unpack windows attributes
+  - [ ] Unpack windows alternate data stream extended attributes
+- [ ] `zarc list-files`
+- [ ] Streaming packing
+- [ ] Streaming unpacking
+- [ ] Profile and optimise
+- [ ] Pure rust zstd?
