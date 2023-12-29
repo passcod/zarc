@@ -241,3 +241,66 @@ Appending to a Zarc regenerates the keypair and re-signs every checksum, so the 
 - Compression is per unique file, so it won't achieve compression gains across similar-but-not-identical files.
 - There's an uncompressed overhead per unique file, so if you have a lot of small _unique_ files, it can be less efficient compared to tar+zstd which may squash the per-file overhead as well as the file content.
 
+## Performance
+
+For software that has _not_ been optimised in any way, Zarc is... not that bad.
+
+### 1.4G of node_modules
+
+A Node.js's project `node_modules` is typically many small and medium files:
+
+```console
+$ tree node_modules | wc -l
+172572
+
+$ du -bd0 node_modules
+936861187 # or 1.4G
+
+$ find node_modules -type f -printf '%s\\n' | datamash \
+max 1           min 1   mean 1          median 1
+20905472        0       6134.9564061426 822      # in bytes
+```
+
+#### Baseline: tar + zstd
+
+```console
+$ /usr/bin/time tar cf node_modules.tar.zst node_modules
+1.31user 3.36system 0:05.92elapsed 78%CPU (0avgtext+0avgdata 4128maxresident)k
+0inputs+2170688outputs (0major+368minor)pagefaults 0swaps
+
+$ du -b node_modules.tar.zst
+1110671360 # or 1.1G
+```
+
+#### Zarc [`e34f347`](https://github.com/passcod/zarc/commit/e34f347) (2023-12-30)
+
+```console
+$ /usr/bin/time zarc pack --output node_modules.zarc node_modules
+15.86user 5.83system 0:24.41elapsed 88%CPU (0avgtext+0avgdata 434032maxresident)k
+844768inputs+879120outputs (0major+307686minor)pagefaults 0swaps
+
+$ du -b node_modules.zarc
+450074612	# or 430M
+```
+
+#### Benchmark
+
+```console
+$ hyperfine --warmup 2 \
+  'tar cf node_modules.tar.zst node_modules' \
+  'zarc pack --output node_modules.zarc node_modules'
+
+Benchmark 1: tar cf node_modules.tar.zst node_modules
+  Time (mean ± σ):      7.022 s ±  0.547 s    [User: 1.402 s, System: 3.599 s]
+  Range (min … max):    6.508 s …  8.085 s    10 runs
+
+Benchmark 2: zarc pack --output node_modules.zarc node_modules
+  Time (mean ± σ):     21.256 s ±  0.291 s    [User: 15.708 s, System: 5.098 s]
+  Range (min … max):   20.784 s … 21.768 s    10 runs
+
+Summary
+  'tar cf node_modules.tar.zst node_modules' ran
+    3.03 ± 0.24 times faster than 'zarc pack --output node_modules.zarc node_modules'
+```
+
+3× slower than tar+zstd for 60% better compression... not bad!
