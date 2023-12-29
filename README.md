@@ -26,7 +26,7 @@ Here's a [specification](./SPEC.md) of the format.
 ### Install
 
 This repository contains a Rust library crate implementing the format, and a Rust CLI tool.
-You can install it using [a recent stable Rust](https://rustup.sh):
+You can install it using [a recent stable Rust](https://rustup.rs):
 
 ```console
 $ cargo install --git https://github.com/passcod/zarc zarc-cli
