@@ -31,12 +31,12 @@ pub const ZARC_DIRECTORY_VERSION: u8 = 1;
 /// Zarc Header
 ///
 /// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#zarc-header)
-#[derive(Clone, Copy, Debug, Eq, PartialEq, DekuRead, DekuWrite)]
+#[derive(Clone, Debug, Eq, PartialEq, DekuRead, DekuWrite)]
 #[deku(endian = "little")]
 pub struct ZarcHeader {
 	/// Magic number. Should match [`ZARC_MAGIC`].
-	#[deku(bytes = "3")]
-	pub magic: [u8; 3],
+	#[deku(count = "3")]
+	pub magic: Vec<u8>,
 
 	/// File format version number. Should match [`ZARC_FILE_VERSION`].
 	#[deku(bytes = "1")]

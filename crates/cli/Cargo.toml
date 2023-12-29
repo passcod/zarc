@@ -14,13 +14,24 @@ repository = "https://github.com/passcod/zarc"
 readme = "README.md"
 
 [dependencies]
+blake3 = { version = "1.5.0", features = ["rayon"] }
+bs64 = "0.1.2"
+chrono = "0.4.31"
 clap = { version = "4.4.11", features = ["derive", "cargo", "wrap_help"] }
+deku = { version = "0.16.0", features = ["logging"], git = "https://github.com/sharksforarms/deku" }
+ed25519-dalek = "2.1.0"
+minicbor = { version = "0.20.0", features = ["std"] }
 rand = "0.8.5"
 tracing = "0.1.40"
-tracing-subscriber = "0.3.18"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
+umask = "2.1.0"
 walkdir = "2.4.0"
 zarc = { version = "0.1.0", path = "../lib" }
-zstd-safe = "7.0.0"
+zstd-safe = { version = "7.0.0", features = ["experimental"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.52.0", features = ["Win32_Storage_FileSystem"] }
+
+[build-dependencies]
+bosion = "1.0.2"
+embed-resource = "2.4.0"

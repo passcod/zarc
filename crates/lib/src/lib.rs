@@ -10,6 +10,7 @@
 pub mod decode;
 pub mod encode;
 pub mod format;
+pub mod zstd;
 
 pub(crate) fn map_zstd_error(code: usize) -> std::io::Error {
 	let msg = zstd_safe::get_error_name(code);

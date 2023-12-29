@@ -1,10 +1,11 @@
 use std::{
 	collections::HashMap,
 	fs::{File, Metadata},
-	path::Component,
+	path::{Component, PathBuf},
 	time::SystemTime,
 };
 
+use clap::{Parser, ValueHint};
 use rand::rngs::OsRng;
 use tracing::{debug, info};
 use walkdir::WalkDir;
@@ -13,11 +14,26 @@ use zarc::{
 	format::{AttributeValue, CborString, Digest, FilemapEntry, Pathname, PosixOwner, Timestamps},
 };
 
-use crate::args::Args;
+#[derive(Debug, Clone, Parser)]
+pub struct PackArgs {
+	/// Output file.
+	#[arg(long,
+		value_hint = ValueHint::AnyPath,
+		value_name = "PATH",
+	)]
+	pub output: PathBuf,
+
+	/// Paths to pack.
+	#[arg(
+		value_hint = ValueHint::AnyPath,
+		value_name = "PATH",
+	)]
+	pub paths: Vec<PathBuf>,
+}
 
 const DEFENSIVE_HEADER: &'static str = "STOP! THIS IS A ZARC ARCHIVE THAT HAS BEEN UNCOMPRESSED WITH RAW ZSTD\r\n\r\nSee https://github.com/passcod/zarc to unpack correctly.\r\n\r\n";
 
-pub(crate) fn pack(args: Args) -> std::io::Result<()> {
+pub(crate) fn pack(args: PackArgs) -> std::io::Result<()> {
 	info!(path=?args.output, "create output file");
 	let mut file = File::create(args.output)?;
 
@@ -69,7 +85,7 @@ pub(crate) fn pack(args: Args) -> std::io::Result<()> {
 
 	info!("finalising zarc");
 	let public_key = zarc.finalise()?;
-	eprintln!("{public_key:?}");
+	println!("zarc public key: {}", bs64::encode(&public_key));
 	Ok(())
 }
 
