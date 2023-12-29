@@ -81,6 +81,9 @@ $ ls -lh myfirst.zarc
 
 $ file myfirst.zarc
 myfirst.zarc: Zstandard compressed data (v0.8+), Dictionary ID: None
+
+$ zstd --test myfirst.zarc
+myfirst.zarc        : 70392 bytes
 ```
 
 Zarc creates files that are valid Zstd streams.
@@ -281,8 +284,8 @@ A Node.js's project `node_modules` is typically many small and medium files:
 $ tree node_modules | wc -l
 172572
 
-$ du -bd0 node_modules
-936861187 # or 1.4G
+$ dust -sbn0 node_modules
+907M ┌── node_modules
 
 $ find node_modules -type f -printf '%s\\n' | datamash \
 max 1           min 1   mean 1          median 1
@@ -296,8 +299,8 @@ $ /usr/bin/time tar cf node_modules.tar.zst node_modules
 1.31user 3.36system 0:05.92elapsed 78%CPU (0avgtext+0avgdata 4128maxresident)k
 0inputs+2170688outputs (0major+368minor)pagefaults 0swaps
 
-$ du -b node_modules.tar.zst
-1110671360 # or 1.1G
+$ dust -sbn0 node_modules.tar.zst
+1.0G ┌── node_modules.tar.zst
 ```
 
 #### Zarc [`5f49f2b`](https://github.com/passcod/zarc/commit/5f49f2b) (2023-12-30)
@@ -307,8 +310,8 @@ $ /usr/bin/time zarc pack --output node_modules.zarc node_modules
 15.86user 5.83system 0:24.41elapsed 88%CPU (0avgtext+0avgdata 434032maxresident)k
 844768inputs+879120outputs (0major+307686minor)pagefaults 0swaps
 
-$ du -b node_modules.zarc
-450074612	# or 430M
+$ dust -sbn0 node_modules.zarc
+429M ┌── node_modules.zarc
 ```
 
 #### Benchmark
@@ -331,4 +334,4 @@ Summary
     3.03 ± 0.24 times faster than 'zarc pack --output node_modules.zarc node_modules'
 ```
 
-3× slower than tar+zstd for 60% better compression... not bad!
+3× slower than tar+zstd for 55% better compression... not bad!
