@@ -173,7 +173,10 @@ fn parse_frame<'input>(
 				DCtx::try_create().ok_or_else(|| Error::other("failed allocating zstd context"))?;
 			zstd.init().map_err(map_zstd_error)?;
 
-			let mut buf = Vec::with_capacity(1024 * 128);
+			let mut buf: Vec<u8> = Vec::with_capacity(
+				(1024 * 128)
+					.max(frame.uncompressed_size() + 1024.max(frame.uncompressed_size() / 10)),
+			);
 			match zstd.decompress(&mut buf, &input).map_err(map_zstd_error) {
 				Ok(bytes) => {
 					println!("  decompressed: {buf:02x?} ({bytes} bytes)");
@@ -222,7 +225,10 @@ fn parse_frame<'input>(
 					.ok_or_else(|| Error::other("failed allocating zstd context"))?;
 				zstd.init().map_err(map_zstd_error)?;
 
-				let mut buf = Vec::with_capacity(1024 * 128);
+				let mut buf: Vec<u8> = Vec::with_capacity(
+					(1024 * 128)
+						.max(frame.uncompressed_size() + 1024.max(frame.uncompressed_size() / 10)),
+				);
 				let bytes = match zstd.decompress(&mut buf, &input).map_err(map_zstd_error) {
 					Ok(bytes) => bytes,
 					Err(err) => {

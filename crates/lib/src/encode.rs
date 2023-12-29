@@ -162,7 +162,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 	// and then write that buffer to the writer
 	fn write_compressed_frame(&mut self, data: &[u8]) -> Result<usize> {
 		// start with a buffer slightly larger than the input
-		let mut buffer: Vec<u8> = Vec::with_capacity(data.len() + 1024);
+		let mut buffer: Vec<u8> = Vec::with_capacity(data.len() + 1024.max(data.len() / 10));
 
 		tracing::trace!(
 			bytes = %format!("{data:02x?}"),
