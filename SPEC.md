@@ -184,7 +184,7 @@ _Byte string._ **Mandatory.**
 
 Public key for the selected signature scheme.
 
-### `5`: Filemap
+### `4`: Filemap
 
 _Array of maps._ **Mandatory.**
 
@@ -255,9 +255,11 @@ This is a structure with at least one of the following types of data:
 - _Text string._ the user name as UTF-8
 - _Byte string._ the user name as non-Unicode
 
-There SHOULD NOT be both _Text string_ and _Byte string_ values. If there is, the _Text string_ value wins out.
+There SHOULD NOT be both _Text string_ and _Byte string_ values; if there are, the _Text string_ value wins out.
+There SHOULD NOT be more than one unsigned integer; if there are, the last value wins out.
 
 Implementations SHOULD prefer the name to the ID if there is an existing user named thus on the system with a different ID.
+Implementations SHOULD prefer to encode IDs as 32-bit unsigned integers, but MUST accept 8-bit, 16-bit, and 64-bit unsigned integers as well.
 
 #### `5`: POSIX File Group
 
@@ -276,13 +278,13 @@ Implementations SHOULD prefer the name to the ID if there is an existing group n
 
 #### `10`: File User Metadata
 
-_Map(text string, CBOR)._ **Optional.**
+_Map(text string, boolean or text or byte string)._ **Optional.**
 
 Arbitrary user-provided metadata for this file entry.
 
 #### `11`: File Attributes
 
-_Map(text string, CBOR)._ **Optional.**
+_Map(text string, boolean or text or byte string)._ **Optional.**
 
 A map of values (typically boolean flags) which keys SHOULD correspond to [file attributes](https://en.wikipedia.org/wiki/Chattr).
 
@@ -290,11 +292,11 @@ Implementations MAY ignore attributes if obtaining or setting them is impossible
 
 #### `12`: Extended File Attributes
 
-_Map(text string, CBOR)._ **Optional.**
+_Map(text string, boolean or text or byte string)._ **Optional.**
 
 A map of extended attributes (`xattr`).
 
-Zarc imposes no restriction on the format of attribute names, nor on the content, type, nor length of attribute values.
+Zarc imposes no restriction on the format of attribute names, nor on the content or length of attribute values.
 
 Implementations MAY ignore extended attributes if obtaining or setting them is impossible or impractical.
 On Linux, implementations MAY assume a `user` namespace for unprefixed keys.
@@ -385,7 +387,7 @@ Implementations MAY use this to avoid unpacking frames which exceed available me
 
 ### `10`: User Metadata
 
-_Map(text string, CBOR)._ **Optional.**
+_Map(text string, boolean or text or byte string)._ **Optional.**
 
 Arbitrary user-provided metadata for the whole Zarc file.
 

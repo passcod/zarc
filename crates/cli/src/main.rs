@@ -7,7 +7,7 @@ use std::{
 use clap::{Parser, ValueHint};
 use rand::rngs::OsRng;
 use tracing::{debug, info, warn};
-use zarc::format::{FilemapEntry, Pathname, RawValue};
+use zarc::format::{CborString, FilemapEntry, Pathname};
 
 /// TBC
 #[derive(Debug, Clone, Parser)]
@@ -59,6 +59,10 @@ fn main() {
 	let mut csprng = OsRng;
 	let mut zarc = zarc::encode::Encoder::new(&mut file, &mut csprng, &DEFENSIVE_HEADER).unwrap();
 
+	debug!("enable zstd checksums");
+	zarc.set_zstd_parameter(zarc::encode::ZstdParameter::ChecksumFlag(true))
+		.unwrap();
+
 	for filename in &args.files {
 		info!("read {filename:?}");
 		let file = std::fs::read(&filename).unwrap();
@@ -71,7 +75,7 @@ fn main() {
 					.filter_map(|c| {
 						if let Component::Normal(comp) = c {
 							// TODO: better, with binary and to_str()
-							Some(RawValue::String(comp.to_string_lossy().into()))
+							Some(CborString::String(comp.to_string_lossy().into()))
 						} else {
 							None
 						}

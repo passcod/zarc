@@ -10,11 +10,10 @@
 pub mod format {
 	//! Common types defining the binary format structures.
 
-	use std::collections::HashMap;
+	use std::{collections::HashMap, time::SystemTime};
 
 	use deku::prelude::*;
-	use rmpv::Value;
-	use serde::{Deserialize, Serialize};
+	use minicbor::{data::Type, Decode, Decoder, Encode, Encoder};
 
 	/// Magic bytes
 	pub const ZARC_MAGIC: [u8; 3] = [0x65, 0xAA, 0xDC];
@@ -72,14 +71,22 @@ pub mod format {
 		hash_length: u16,
 
 		/// Digest hash of the directory
-		#[deku(count = "hash_length")]
+		#[deku(
+			count = "hash_length",
+			map = "|field: Vec<u8>| -> Result<_, DekuError> { Ok(Digest(field)) }",
+			writer = "self.hash.0.write(deku::output, ())"
+		)]
 		pub hash: Digest,
 
 		#[deku(bytes = "2", update = "self.sig.len()")]
 		sig_length: u16,
 
 		/// Signature over the digest
-		#[deku(count = "sig_length")]
+		#[deku(
+			count = "sig_length",
+			map = "|field| -> Result<_, DekuError> { Ok(Signature(field)) }",
+			writer = "self.sig.0.write(deku::output, ())"
+		)]
 		pub sig: Signature,
 
 		/// Uncompressed size in bytes of the directory
@@ -89,7 +96,7 @@ pub mod format {
 
 	impl ZarcDirectoryHeader {
 		/// Correctly create header from data.
-		pub fn new(size: usize, hash: Digest, sig: Signature) -> std::io::Result<Self> {
+		pub fn new(size: usize, hash: Vec<u8>, sig: Vec<u8>) -> std::io::Result<Self> {
 			Ok(Self {
 				directory_size: size.try_into().map_err(|err| std::io::Error::other(err))?,
 				magic: ZARC_MAGIC.to_vec(),
@@ -98,11 +105,11 @@ pub mod format {
 					.len()
 					.try_into()
 					.map_err(|err| std::io::Error::other(format!("hash is too long: {err}")))?,
-				hash,
+				hash: Digest(hash),
 				sig_length: sig.len().try_into().map_err(|err| {
 					std::io::Error::other(format!("signature is too long: {err}"))
 				})?,
-				sig,
+				sig: Signature(sig),
 			})
 		}
 	}
@@ -121,280 +128,469 @@ pub mod format {
 	/// Zarc Directory
 	///
 	/// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#zarc-directory)
-	#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+	#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+	#[cbor(map)]
 	pub struct ZarcDirectory {
-		/// The `v`, `h`, `s`, `k` fields.
-		#[serde(flatten)]
-		pub prelude: ZarcDirectoryPrelude,
+		/// Directory version. Should match [`ZARC_DIRECTORY_VERSION`].
+		#[n(0)]
+		pub version: u8,
 
-		/// User Metadata.
-		#[serde(rename = "u")]
-		pub user_metadata: HashMap<String, Value>,
+		/// Digest (hash) algorithm.
+		#[n(1)]
+		pub hash_algorithm: HashAlgorithm,
+
+		/// Signature scheme.
+		#[n(2)]
+		pub signature_scheme: SignatureScheme,
+
+		/// Public key.
+		#[n(3)]
+		pub public_key: PublicKey,
 
 		/// Filemap.
 		///
 		/// List of files, their pathname, their metadata, and which frame of content they point to.
-		#[serde(rename = "m")]
+		#[n(4)]
 		pub filemap: Vec<FilemapEntry>,
 
 		/// Framelist.
 		///
 		/// List of frames, their digest, signature, and offset in the file.
-		#[serde(rename = "l")]
+		#[n(5)]
 		pub framelist: Vec<FrameEntry>,
+
+		/// User Metadata.
+		///
+		/// You can write a Some(empty HashMap), but you'll save two bytes if you write a None
+		/// instead. This is pretty cheap here, but adds up for the similar fields in
+		/// [`filemap`](FilemapEntry).
+		#[n(10)]
+		pub user_metadata: Option<HashMap<String, AttributeValue>>,
 	}
 
-	/// Hash or digest.
-	pub type Digest = Vec<u8>;
+	macro_rules! bytea_newtype {
+		($name:ident # $doc:literal) => {
+			#[doc = $doc]
+			#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+			pub struct $name(pub Vec<u8>);
 
-	/// Signature.
-	pub type Signature = Vec<u8>;
+			impl std::ops::Deref for $name {
+				type Target = Vec<u8>;
 
-	/// Public key.
-	pub type PublicKey = Vec<u8>;
+				fn deref(&self) -> &Self::Target {
+					&self.0
+				}
+			}
 
-	/// Zarc Directory Prelude
-	///
-	/// This is the `v`, `h`, `s`, `k` fields of the directory only.
-	#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
-	pub struct ZarcDirectoryPrelude {
-		/// Directory version. Should match [`ZARC_DIRECTORY_VERSION`].
-		#[serde(rename = "v")]
-		pub version: u8,
+			impl<C> Encode<C> for $name {
+				fn encode<W: minicbor::encode::write::Write>(
+					&self,
+					e: &mut Encoder<W>,
+					_ctx: &mut C,
+				) -> Result<(), minicbor::encode::Error<W::Error>> {
+					e.bytes(&self.0).map(drop)
+				}
+			}
 
-		/// Digest (hash) algorithm.
-		#[serde(rename = "h")]
-		pub hash_algorithm: HashAlgorithm,
-
-		/// Signature scheme.
-		#[serde(rename = "s")]
-		pub signature_scheme: SignatureScheme,
-
-		/// Public key.
-		#[serde(rename = "k")]
-		pub public_key: PublicKey,
+			impl<'b, C> Decode<'b, C> for $name {
+				fn decode(
+					d: &mut Decoder<'b>,
+					_ctx: &mut C,
+				) -> Result<Self, minicbor::decode::Error> {
+					match d.datatype()? {
+						Type::Bytes => d.bytes().map(|b| Self(b.into())),
+						Type::BytesIndef => Ok(Self(d.bytes_iter()?.try_fold(
+							Vec::new(),
+							|mut vec, b| {
+								b.map(|b| {
+									vec.extend(b);
+									vec
+								})
+							},
+						)?)),
+						ty => Err(minicbor::decode::Error::type_mismatch(ty)),
+					}
+				}
+			}
+		};
 	}
+
+	bytea_newtype!(Digest # "Hash or digest.");
+	bytea_newtype!(Signature # "Signature.");
+	bytea_newtype!(PublicKey # "Public key.");
 
 	/// Available digest algorithms.
-	#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+	#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Encode, Decode)]
+	#[cbor(index_only)]
 	pub enum HashAlgorithm {
 		/// BLAKE3 hash function.
-		#[serde(rename = "b3")]
+		#[n(1)]
 		Blake3,
 	}
 
 	/// Available signature schemes.
-	#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+	#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Encode, Decode)]
+	#[cbor(index_only)]
 	pub enum SignatureScheme {
 		/// Ed25519 scheme.
-		#[serde(rename = "ed25519")]
+		#[n(1)]
 		Ed25519,
 	}
 
 	/// Zarc Directory Filemap Entry
 	///
-	/// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#m-filemap)
-	#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+	/// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#4-filemap)
+	#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+	#[cbor(map)]
 	pub struct FilemapEntry {
-		/// Hash of a frame of content.
-		#[serde(rename = "h")]
-		pub frame_hash: Option<Digest>,
-
 		/// Pathname.
-		#[serde(rename = "n")]
+		#[n(0)]
 		pub name: Pathname,
 
-		/// User metadata.
-		#[serde(rename = "u")]
-		pub user_metadata: HashMap<String, Value>,
+		/// Hash of a frame of content.
+		#[n(1)]
+		pub frame_hash: Option<Digest>,
 
 		/// Is readonly.
-		#[serde(rename = "r")]
+		#[n(2)]
 		pub readonly: Option<bool>,
 
 		/// POSIX mode.
-		#[serde(rename = "m")]
+		#[n(3)]
 		pub mode: Option<u32>,
 
 		/// POSIX user.
-		#[serde(rename = "o")]
+		#[n(4)]
 		pub user: Option<PosixOwner>,
 
 		/// POSIX group.
-		#[serde(rename = "g")]
+		#[n(5)]
 		pub group: Option<PosixOwner>,
 
+		/// User metadata.
+		#[n(10)]
+		pub user_metadata: Option<HashMap<String, AttributeValue>>,
+
 		/// File attributes.
-		#[serde(rename = "a")]
-		pub attributes: HashMap<String, Value>,
+		#[n(11)]
+		pub attributes: Option<HashMap<String, AttributeValue>>,
 
 		/// Extended attributes.
-		#[serde(rename = "x")]
-		pub extended_attributes: HashMap<String, Value>,
+		#[n(12)]
+		pub extended_attributes: Option<HashMap<String, AttributeValue>>,
 
 		/// Timestamps.
-		#[serde(rename = "t")]
+		#[n(20)]
 		pub timestamps: Option<Timestamps>,
 
 		/// Special files.
-		#[serde(rename = "z")]
-		pub special: Option<FilemapSpecial>,
+		#[n(30)]
+		pub special: Option<SpecialFile>,
 	}
 
 	/// Pathname as components.
-	#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+	#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+	#[cbor(transparent)]
 	pub struct Pathname(
 		/// Components of the path.
-		pub Vec<RawValue>,
+		#[n(0)] // but unused because of transparent
+		pub  Vec<CborString>,
+		// double space is from rustfmt: https://github.com/rust-lang/rustfmt/issues/5997
 	);
 
-	/// Msgpack String or Binary value.
-	#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-	pub enum RawValue {
-		/// UTF-8-encoded string value.
+	/// CBOR Text or Byte string.
+	#[derive(Clone, Debug, PartialEq)]
+	pub enum CborString {
+		/// UTF-8 text string value.
 		String(String),
 
-		/// Non-unicode binary value.
+		/// Non-unicode byte string value.
 		Binary(Vec<u8>),
 	}
 
+	impl<C> Encode<C> for CborString {
+		fn encode<W: minicbor::encode::write::Write>(
+			&self,
+			e: &mut Encoder<W>,
+			ctx: &mut C,
+		) -> Result<(), minicbor::encode::Error<W::Error>> {
+			match self {
+				Self::String(s) => s.encode(e, ctx),
+				Self::Binary(b) => <&minicbor::bytes::ByteSlice>::from(b.as_slice()).encode(e, ctx),
+			}
+		}
+	}
+
+	impl<'b, C> Decode<'b, C> for CborString {
+		fn decode(d: &mut Decoder<'b>, _ctx: &mut C) -> Result<Self, minicbor::decode::Error> {
+			match d.datatype()? {
+				Type::String => d.str().map(|s| Self::String(s.into())),
+				Type::StringIndef => Ok(Self::String(d.str_iter()?.try_fold(
+					String::new(),
+					|mut string, s| {
+						s.map(|s| {
+							string.extend(s.chars());
+							string
+						})
+					},
+				)?)),
+				Type::Bytes => d.bytes().map(|b| Self::Binary(b.into())),
+				Type::BytesIndef => Ok(Self::Binary(d.bytes_iter()?.try_fold(
+					Vec::new(),
+					|mut vec, b| {
+						b.map(|b| {
+							vec.extend(b);
+							vec
+						})
+					},
+				)?)),
+				ty => Err(minicbor::decode::Error::type_mismatch(ty)),
+			}
+		}
+	}
+
+	/// Attributes can be booleans or text or byte strings.
+	#[derive(Clone, Debug, PartialEq)]
+	pub enum AttributeValue {
+		/// A boolean.
+		Boolean(bool),
+
+		/// A string.
+		String(CborString),
+	}
+
+	impl<C> Encode<C> for AttributeValue {
+		fn encode<W: minicbor::encode::write::Write>(
+			&self,
+			e: &mut Encoder<W>,
+			ctx: &mut C,
+		) -> Result<(), minicbor::encode::Error<W::Error>> {
+			match self {
+				Self::Boolean(b) => b.encode(e, ctx),
+				Self::String(s) => s.encode(e, ctx),
+			}
+		}
+	}
+
+	impl<'b, C> Decode<'b, C> for AttributeValue {
+		fn decode(d: &mut Decoder<'b>, _ctx: &mut C) -> Result<Self, minicbor::decode::Error> {
+			match d.datatype()? {
+				Type::String | Type::StringIndef | Type::Bytes | Type::BytesIndef => {
+					d.decode().map(Self::String)
+				}
+				Type::Bool => d.decode().map(Self::Boolean),
+				ty => Err(minicbor::decode::Error::type_mismatch(ty)),
+			}
+		}
+	}
+
 	/// POSIX owner information (user or group).
-	#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+	#[derive(Clone, Debug, PartialEq)]
 	pub struct PosixOwner {
 		/// Owner numeric ID.
-		#[serde(rename = "i")]
-		pub id: u64,
+		pub id: Option<u64>,
 
 		/// Owner name.
-		#[serde(rename = "n")]
-		pub name: RawValue,
+		pub name: Option<CborString>,
+	}
+
+	impl<C> Encode<C> for PosixOwner {
+		fn encode<W: minicbor::encode::write::Write>(
+			&self,
+			e: &mut Encoder<W>,
+			_ctx: &mut C,
+		) -> Result<(), minicbor::encode::Error<W::Error>> {
+			e.array(match (self.id.is_some(), self.name.is_some()) {
+				(true, true) => 2,
+				(true, false) | (false, true) => 1,
+				(false, false) => 0,
+			})?;
+
+			if let Some(id) = &self.id {
+				e.u64(*id)?;
+			}
+
+			if let Some(name) = &self.name {
+				e.encode(name)?;
+			}
+
+			Ok(())
+		}
+	}
+
+	impl<'b, C> Decode<'b, C> for PosixOwner {
+		fn decode(d: &mut Decoder<'b>, _ctx: &mut C) -> Result<Self, minicbor::decode::Error> {
+			let mut id = None;
+			let mut name = None;
+
+			let max = d.array()?.unwrap_or(u64::MAX);
+			for _ in 0..max {
+				match d.datatype()? {
+					Type::Break => break,
+					Type::U8 => {
+						id = Some(d.u8()? as _);
+					}
+					Type::U16 => {
+						id = Some(d.u16()? as _);
+					}
+					Type::U32 => {
+						id = Some(d.u32()? as _);
+					}
+					Type::U64 => {
+						id = Some(d.u64()?);
+					}
+					Type::String | Type::StringIndef => {
+						name = Some(d.decode()?);
+					}
+					Type::Bytes | Type::BytesIndef if name.is_none() => {
+						name = Some(d.decode()?);
+					}
+					ty => return Err(minicbor::decode::Error::type_mismatch(ty)),
+				}
+			}
+
+			Ok(Self { id, name })
+		}
 	}
 
 	/// Directory Filemap Entry Timestamps.
-	#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+	// TODO: chrono
+	#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+	#[cbor(map)]
 	pub struct Timestamps {
+		/// Insertion time (time added to Zarc).
+		#[n(0)]
+		pub inserted: Option<SystemTime>,
+
 		/// Creation time (ctime).
-		#[serde(rename = "c")]
-		pub created: Option<Timestamp>,
+		#[n(1)]
+		pub created: Option<SystemTime>,
 
 		/// Modification time (mtime).
-		#[serde(rename = "m")]
-		pub modified: Option<Timestamp>,
+		#[n(2)]
+		pub modified: Option<SystemTime>,
 
 		/// Access time (atime).
-		#[serde(rename = "a")]
-		pub accessed: Option<Timestamp>,
-
-		/// Insertion time (time added to Zarc).
-		#[serde(rename = "z")]
-		pub inserted: Option<Timestamp>,
-	}
-
-	/// Msgpack timestamp.
-	#[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
-	pub enum Timestamp {
-		/// 32-bit: Seconds since the epoch
-		Seconds(u32),
-
-		/// 64-bit: Seconds and nanos since the epoch
-		Nanoseconds {
-			/// Seconds since the epoch
-			seconds: u32,
-			/// Nanoseconds within the second
-			nanos: u32,
-		},
-
-		/// 96-bit: Extended range seconds and nanos
-		Extended {
-			/// Seconds with zero at the epoch
-			seconds: i64,
-			/// Nanoseconds within the second
-			nanos: u32,
-		},
+		#[n(3)]
+		pub accessed: Option<SystemTime>,
 	}
 
 	/// Special File metadata.
 	///
-	/// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#z-special-file-types)
-	#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-	pub struct FilemapSpecial {
+	/// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#30-special-file-types)
+	#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+	#[cbor(array)]
+	pub struct SpecialFile {
 		/// Kind of special file.
-		#[serde(rename = "t")]
-		pub kind: SpecialFile,
+		///
+		/// Will be `None` for unknown kinds.
+		#[n(0)]
+		pub kind: Option<SpecialFileKind>,
 
 		/// Link target.
-		#[serde(rename = "d")]
-		pub link_target: LinkTarget,
+		#[n(1)]
+		pub link_target: Option<LinkTarget>,
 	}
 
 	/// Special File kinds.
 	///
-	/// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#z-special-file-types)
-	#[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
-	#[non_exhaustive]
-	pub enum SpecialFile {
-		/// Normal file.
-		///
-		/// Generally unneeded (omit the `z` special file structure).
-		NormalFile = 0x00,
-
+	/// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#30-special-file-types)
+	#[derive(Copy, Clone, Debug, Eq, PartialEq, Encode, Decode)]
+	#[cbor(index_only)]
+	pub enum SpecialFileKind {
 		/// Directory.
 		///
 		/// To encode metadata/attributes against a directory.
-		Directory = 0x01,
+		#[n(1)]
+		Directory = 1,
 
 		/// Internal hardlink.
 		///
 		/// Must point to a file that exists within this Zarc.
-		InternalHardlink = 0x10,
+		#[n(10)]
+		InternalHardlink = 10,
 
 		/// External hardlink.
-		ExternalHardlink = 0x11,
+		#[n(11)]
+		ExternalHardlink = 11,
 
 		/// Internal symbolic link.
 		///
 		/// Must point to a file that exists within this Zarc.
-		InternalSymlink = 0x12,
+		#[n(12)]
+		InternalSymlink = 12,
 
 		/// External absolute symbolic link.
-		ExternalAbsoluteSymlink = 0x13,
+		#[n(13)]
+		ExternalAbsoluteSymlink = 13,
 
 		/// External relative symbolic link.
-		ExternalRelativeSymlink = 0x14,
+		#[n(14)]
+		ExternalRelativeSymlink = 14,
 	}
 
-	/// Target of link (for [`FilemapSpecial`])
+	/// Target of link (for [`SpecialFile`])
 	///
-	/// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#z-special-file-types)
-	#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+	/// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#30-special-file-types)
+	#[derive(Clone, Debug, PartialEq)]
 	pub enum LinkTarget {
 		/// Target as full pathname.
-		FullPath(RawValue),
+		FullPath(CborString),
 
 		/// Target as array of path components.
-		Components(Vec<RawValue>),
+		Components(Vec<CborString>),
+	}
+
+	impl<C> Encode<C> for LinkTarget {
+		fn encode<W: minicbor::encode::write::Write>(
+			&self,
+			e: &mut Encoder<W>,
+			ctx: &mut C,
+		) -> Result<(), minicbor::encode::Error<W::Error>> {
+			match self {
+				Self::FullPath(s) => s.encode(e, ctx),
+				Self::Components(v) => {
+					e.array(v.len().try_into().expect("path way too long"))?;
+					for s in v {
+						s.encode(e, ctx)?;
+					}
+					Ok(())
+				}
+			}
+		}
+	}
+
+	impl<'b, C> Decode<'b, C> for LinkTarget {
+		fn decode(d: &mut Decoder<'b>, ctx: &mut C) -> Result<Self, minicbor::decode::Error> {
+			match d.datatype()? {
+				Type::Array => todo!(),
+				Type::ArrayIndef => todo!(),
+				_ => CborString::decode(d, ctx).map(Self::FullPath),
+			}
+		}
 	}
 
 	/// Zarc Directory Framelist Entry
 	///
 	/// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#l-framelist)
-	#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+	#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+	#[cbor(map)]
 	pub struct FrameEntry {
 		/// Frame offset.
-		#[serde(rename = "o")]
+		#[n(0)]
 		pub offset: u64,
 
-		/// Uncompressed payload size in bytes.
-		#[serde(rename = "n")]
-		pub uncompressed_size: u64,
+		/// Hash of the frame.
+		#[n(1)]
+		pub frame_hash: Digest,
 
-		/// Payload digest.
-		#[serde(rename = "h")]
-		pub digest: Digest,
-
-		/// Signature against digest.
-		#[serde(rename = "s")]
+		/// Signature against hash.
+		#[n(2)]
 		pub signature: Signature,
+
+		/// Uncompressed content size in bytes.
+		#[n(3)]
+		pub uncompressed_size: u64,
 	}
 }
 
@@ -428,14 +624,14 @@ pub mod encode {
 		io::{Error, Result, Write},
 	};
 
+	use deku::{DekuContainerRead, DekuContainerWrite};
 	use ed25519_dalek::{Signer, SigningKey};
 	pub use zstd_safe::CParameter as ZstdParameter;
 	use zstd_safe::{CCtx, ResetDirective};
 
 	use crate::format::{
 		Digest, FilemapEntry, FrameEntry, HashAlgorithm, PublicKey, Signature, SignatureScheme,
-		ZarcDirectory, ZarcDirectoryHeader, ZarcDirectoryPrelude, ZarcEofTrailer, FILE_MAGIC,
-		ZARC_DIRECTORY_VERSION,
+		ZarcDirectory, ZarcDirectoryHeader, ZarcEofTrailer, FILE_MAGIC, ZARC_DIRECTORY_VERSION,
 	};
 	use crate::map_zstd_error;
 
@@ -450,30 +646,6 @@ pub mod encode {
 	}
 
 	impl<'writer, W: Write> Encoder<'writer, W> {
-		// zstd-safe is bad at writing data, so we always write to a buffer in memory
-		// and then write that buffer to the writer
-		fn write_compressed_frame(&mut self, data: &[u8]) -> Result<usize> {
-			// start with a buffer slightly larger than the input
-			let mut buffer: Vec<u8> = Vec::with_capacity(data.len() + 1024);
-
-			tracing::trace!(
-				bytes = %format!("{data:02x?}"),
-				length = %data.len(),
-				buffer_size = %buffer.capacity(),
-				"compress data into buffer"
-			);
-			self.zstd
-				.compress2(&mut buffer, data)
-				.map_err(map_zstd_error)?;
-
-			tracing::trace!(
-				bytes = %format!("{buffer:02x?}"),
-				length = %buffer.len(),
-				"write buffer to writer"
-			);
-			self.writer.write(&buffer)
-		}
-
 		/// Create a new encoder and write the header.
 		///
 		/// Requires a CSRNG implementation to generate the signing key.
@@ -517,7 +689,6 @@ pub mod encode {
 					.map_err(map_zstd_error)?;
 
 				// parse frame manually
-				use deku::DekuContainerRead;
 				tracing::trace!(
 					bytes = %format!("{buf:02x?}"),
 					length = %buf.len(),
@@ -566,7 +737,6 @@ pub mod encode {
 				frame.frame_content_size[0] += 4;
 
 				// write edited frame
-				use deku::DekuContainerWrite;
 				let bytes = frame.to_bytes()?;
 				tracing::trace!(
 					?frame,
@@ -593,7 +763,7 @@ pub mod encode {
 		/// Sign user-provided data.
 		pub fn sign_user_data(&self, data: &[u8]) -> Result<Signature> {
 			let signature = self.key.try_sign(data).map_err(|err| Error::other(err))?;
-			Ok(signature.to_vec())
+			Ok(Signature(signature.to_vec()))
 		}
 
 		/// Set a zstd parameter.
@@ -604,6 +774,49 @@ pub mod encode {
 				.set_parameter(parameter)
 				.map_err(map_zstd_error)
 				.map(drop)
+		}
+
+		// zstd-safe is bad at writing data, so we always write to a buffer in memory
+		// and then write that buffer to the writer
+		fn write_compressed_frame(&mut self, data: &[u8]) -> Result<usize> {
+			// start with a buffer slightly larger than the input
+			let mut buffer: Vec<u8> = Vec::with_capacity(data.len() + 1024);
+
+			tracing::trace!(
+				bytes = %format!("{data:02x?}"),
+				length = %data.len(),
+				buffer_size = %buffer.capacity(),
+				"compress data into buffer"
+			);
+			self.zstd
+				.compress2(&mut buffer, data)
+				.map_err(map_zstd_error)?;
+
+			tracing::trace!(
+				bytes = %format!("{buffer:02x?}"),
+				length = %buffer.len(),
+				"write buffer to writer"
+			);
+			self.writer.write(&buffer)
+		}
+
+		// we write skippable frames manually as zstd-safe doesn't have an api
+		fn write_skippable_frame(&mut self, magic: u8, data: Vec<u8>) -> Result<usize> {
+			tracing::trace!(
+				bytes = %format!("{data:02x?}"),
+				length = %data.len(),
+				magic,
+				"compose data into frame"
+			);
+			let frame = reparse_zstd::SkippableFrame::new(magic, data);
+			let buffer = frame.to_bytes()?;
+
+			tracing::trace!(
+				bytes = %format!("{buffer:02x?}"),
+				length = %buffer.len(),
+				"write buffer to writer"
+			);
+			self.writer.write(&buffer)
 		}
 
 		/// Add a frame of data.
@@ -617,7 +830,7 @@ pub mod encode {
 		pub fn add_data_frame(&mut self, content: &[u8]) -> Result<Digest> {
 			// compute content hash
 			let digest = blake3::hash(&content);
-			let digest = digest.as_bytes().to_vec();
+			let digest = Digest(digest.as_bytes().to_vec());
 
 			if self.framelist.contains_key(&digest) {
 				return Ok(digest);
@@ -633,10 +846,12 @@ pub mod encode {
 			let uncompressed_size = content.len();
 
 			// compute signature
-			let signature = self
-				.key
-				.try_sign(&digest)
-				.map_err(|err| Error::other(err))?;
+			let signature = Signature(
+				self.key
+					.try_sign(digest.as_slice())
+					.map_err(|err| Error::other(err))?
+					.to_vec(),
+			);
 
 			self.offset += self.write_compressed_frame(content)?;
 
@@ -644,9 +859,9 @@ pub mod encode {
 			self.framelist.insert(
 				digest.clone(),
 				FrameEntry {
-					digest: digest.clone(),
 					offset: offset.try_into().map_err(|err| Error::other(err))?,
-					signature: signature.to_vec(),
+					frame_hash: digest.clone(),
+					signature,
 					uncompressed_size: uncompressed_size
 						.try_into()
 						.map_err(|err| Error::other(err))?,
@@ -678,23 +893,20 @@ pub mod encode {
 		///
 		/// Discards the private key and returns the public key.
 		pub fn finalise(mut self) -> Result<PublicKey> {
-			let public_key = self.key.verifying_key().as_bytes().to_vec();
+			let public_key = PublicKey(self.key.verifying_key().as_bytes().to_vec());
 
 			let directory = ZarcDirectory {
-				prelude: ZarcDirectoryPrelude {
-					version: ZARC_DIRECTORY_VERSION,
-					hash_algorithm: HashAlgorithm::Blake3,
-					signature_scheme: SignatureScheme::Ed25519,
-					public_key: public_key.clone(),
-				},
-				user_metadata: Default::default(),
+				version: ZARC_DIRECTORY_VERSION,
+				hash_algorithm: HashAlgorithm::Blake3,
+				signature_scheme: SignatureScheme::Ed25519,
+				public_key: public_key.clone(),
 				filemap: std::mem::take(&mut self.filemap),
 				framelist: std::mem::take(&mut self.framelist).into_values().collect(),
+				user_metadata: Default::default(),
 			};
 			tracing::trace!(?directory, "built directory");
 
-			let directory_bytes =
-				rmp_serde::encode::to_vec_named(&directory).map_err(|err| Error::other(err))?;
+			let directory_bytes = minicbor::to_vec(&directory).map_err(Error::other)?;
 			tracing::trace!(
 				bytes = %format!("{directory_bytes:02x?}"),
 				length = %directory_bytes.len(),
@@ -714,8 +926,6 @@ pub mod encode {
 			)?;
 			tracing::trace!(?header, "built directory header");
 
-			// we write skippable frames manually as zstd-safe doesn't have an api
-			use deku::DekuContainerWrite;
 			let header_bytes = header.to_bytes()?;
 			tracing::trace!(
 				bytes = %format!("{header_bytes:02x?}"),
@@ -724,7 +934,7 @@ pub mod encode {
 			);
 
 			// write directory header
-			let mut directory_frames_size = self.writer.write(&header_bytes)?;
+			let mut directory_frames_size = self.write_skippable_frame(0xF, header_bytes)?;
 			tracing::trace!(%directory_frames_size, "wrote directory header");
 
 			// write directory
@@ -746,7 +956,7 @@ pub mod encode {
 				"serialised trailer"
 			);
 
-			assert_eq!(self.writer.write(&trailer_bytes)?, 8);
+			assert_eq!(self.write_skippable_frame(0xE, trailer_bytes)?, 16);
 			tracing::trace!("wrote trailer");
 
 			self.writer.flush()?;
@@ -763,7 +973,7 @@ pub mod encode {
 		#[deku(endian = "little")]
 		pub struct SkippableFrame {
 			#[deku(bytes = "4")]
-			magic: [u8; 4],
+			magic: u32,
 			#[deku(bytes = "4")]
 			size: u32,
 			#[deku(count = "size")]
@@ -777,7 +987,7 @@ pub mod encode {
 					"skippable frame nibble must be between 0 and 15"
 				);
 				Self {
-					magic: [0x50 + nibble, 0x2A, 0x4D, 0x18],
+					magic: u32::from_le_bytes([0x50 + nibble, 0x2A, 0x4D, 0x18]),
 					size: data
 						.len()
 						.try_into()
