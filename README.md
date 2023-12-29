@@ -24,6 +24,7 @@ Here's a [specification](./SPEC.md) of the format.
 ## TODO
 
 - [x] `zarc pack`
+  - [ ] `--append`
   - [ ] `-U` and `-u` flags to set user metadata
   - [ ] `--attest` and `--attest-file` to sign external content
   - [ ] `--level` to set compression level
@@ -66,6 +67,8 @@ That installs the `zarc` CLI tool.
 As we rely on an unreleased version of [deku](https://github.com/sharksforarms/deku), this isn't yet published on crates.io.
 
 ### Start out
+
+_(Some of the commands shown here don't exist yet.)_
 
 Get started by packing a few files:
 
@@ -297,7 +300,7 @@ $ du -b node_modules.tar.zst
 1110671360 # or 1.1G
 ```
 
-#### Zarc [`e34f347`](https://github.com/passcod/zarc/commit/e34f347) (2023-12-30)
+#### Zarc [`5f49f2b`](https://github.com/passcod/zarc/commit/5f49f2b) (2023-12-30)
 
 ```console
 $ /usr/bin/time zarc pack --output node_modules.zarc node_modules
