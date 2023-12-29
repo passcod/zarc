@@ -1,6 +1,6 @@
 [package]
 name = "zarc-cli"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 
 authors = ["Félix Saparelli <felix@passcod.name>"]
@@ -29,7 +29,7 @@ tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
 umask = "2.1.0"
 walkdir = "2.4.0"
-zarc = { version = "0.1.0", path = "../lib" }
+zarc = { version = "0.0.1", path = "../lib" }
 zstd-safe = { version = "7.0.0", features = ["experimental"] }
 
 [target.'cfg(windows)'.dependencies]
