@@ -58,16 +58,12 @@ This repository contains a Rust library crate implementing the format, and a Rus
 You can install it using [a recent stable Rust](https://rustup.sh):
 
 ```console
-$ cargo install zarc-cli
-```
-
-As this is in early development, you may prefer to install from the latest source instead:
-
-```console
 $ cargo install --git https://github.com/passcod/zarc zarc-cli
 ```
 
 That installs the `zarc` CLI tool.
+
+As we rely on an unreleased version of [deku](https://github.com/sharksforarms/deku), this isn't yet published on crates.io.
 
 ### Start out
 
