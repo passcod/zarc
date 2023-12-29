@@ -13,6 +13,9 @@ documentation = "https://github.com/passcod/zarc"
 repository = "https://github.com/passcod/zarc"
 readme = "README.md"
 
+[[bin]]
+name = "zarc"
+
 [dependencies]
 blake3 = { version = "1.5.0", features = ["rayon"] }
 bs64 = "0.1.2"
