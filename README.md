@@ -21,6 +21,35 @@ Zarc provides some interesting features, like:
 
 Here's a [specification](./SPEC.md) of the format.
 
+## TODO
+
+- [x] `zarc pack`
+  - [ ] `-U` and `-u` flags to set user metadata
+  - [ ] `--attest` and `--attest-file` to sign external content
+  - [ ] `--level` to set compression level
+  - [ ] `--zstd` to set Zstd parameters
+  - [ ] Pack linux attributes
+  - [ ] Pack linux xattrs
+  - [ ] Pack mac attributes
+  - [ ] Pack mac xattrs
+  - [x] Pack windows attributes
+  - [ ] Pack windows alternate data stream extended attributes
+- [x] `zarc debug`
+- [ ] `zarc unpack`
+  - [ ] `--key` to check public key matches
+  - [ ] `--attest` and `--attest-file` to check external signature
+  - [ ] Unpack linux attributes
+  - [ ] Unpack linux xattrs
+  - [ ] Unpack mac attributes
+  - [ ] Unpack mac xattrs
+  - [ ] Unpack windows attributes
+  - [ ] Unpack windows alternate data stream extended attributes
+- [ ] `zarc list-files`
+- [ ] Streaming packing
+- [ ] Streaming unpacking
+- [ ] Profile and optimise
+- [ ] Pure rust zstd?
+
 ## Try it out
 
 ### Install
