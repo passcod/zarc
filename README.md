@@ -312,7 +312,7 @@ Summary
   - [ ] `--append`
   - [ ] `-U` and `-u` flags to set user metadata
   - [ ] `--attest` and `--attest-file` to sign external content
-  - [ ] `--level` to set compression level
+  - [x] `--level` to set compression level
   - [ ] `--zstd` to set Zstd parameters
   - [ ] Pack linux attributes
   - [ ] Pack linux xattrs

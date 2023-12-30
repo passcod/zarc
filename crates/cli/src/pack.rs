@@ -29,6 +29,10 @@ pub struct PackArgs {
 		value_name = "PATH",
 	)]
 	pub paths: Vec<PathBuf>,
+
+	/// Compression level.
+	#[arg(long)]
+	pub level: Option<i32>,
 }
 
 const DEFENSIVE_HEADER: &'static str = "STOP! THIS IS A ZARC ARCHIVE THAT HAS BEEN UNCOMPRESSED WITH RAW ZSTD\r\n\r\nSee https://github.com/passcod/zarc to unpack correctly.\r\n\r\n";
@@ -43,6 +47,11 @@ pub(crate) fn pack(args: PackArgs) -> std::io::Result<()> {
 
 	debug!("enable zstd checksums");
 	zarc.set_zstd_parameter(ZstdParameter::ChecksumFlag(true))?;
+
+	if let Some(level) = args.level {
+		debug!(%level, "set compression level");
+		zarc.set_zstd_parameter(ZstdParameter::CompressionLevel(level))?;
+	}
 
 	for path in &args.paths {
 		info!("walk {path:?}");
