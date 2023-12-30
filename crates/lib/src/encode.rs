@@ -25,6 +25,7 @@ pub struct Encoder<'writer, W: Write> {
 	filemap: Vec<FilemapEntry>,
 	framelist: HashMap<Digest, FrameEntry>,
 	offset: usize,
+	compress: bool,
 }
 
 impl<'writer, W: Write> Encoder<'writer, W> {
@@ -139,6 +140,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 			filemap: Vec::new(),
 			framelist: HashMap::new(),
 			offset,
+			compress: true,
 		})
 	}
 
@@ -156,6 +158,13 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 			.set_parameter(parameter)
 			.map_err(map_zstd_error)
 			.map(drop)
+	}
+
+	/// Enable or disable compression.
+	///
+	/// This well apply to future data frames.
+	pub fn enable_compression(&mut self, compress: bool) {
+		self.compress = compress;
 	}
 
 	// zstd-safe is bad at writing data, so we always write to a buffer in memory
@@ -180,6 +189,43 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 			"write buffer to writer"
 		);
 		self.writer.write(&buffer)
+	}
+
+	// zstd can't write fully-uncompressed data, so we use our own
+	// deku types to write raw blocks and the frame directly
+	fn write_uncompressed_frame(&mut self, data: &[u8]) -> Result<usize> {
+		use crate::zstd::parser::*;
+		let mut frame = ZstandardFrame {
+			frame_descriptor: ZstandardFrameDescriptor {
+				fcs_size: 3,
+				single_segment: false,
+				unused_bit: false,
+				reserved_bit: false,
+				checksum: false,
+				did_size: 0,
+			},
+			window_descriptor: None,
+			did: Vec::new(),
+			frame_content_size: u64::try_from(data.len()).unwrap().to_le_bytes().to_vec(),
+			blocks: data
+				.chunks(u16::MAX as _)
+				.map(|data| ZstandardBlock {
+					header: ZstandardBlockHeader::new(
+						ZstandardBlockType::Raw,
+						false,
+						u32::try_from(data.len()).unwrap(), // UNWRAP: chunks() limits to u16
+					),
+					data: data.into(),
+				})
+				.collect(),
+			checksum: None,
+		};
+
+		if let Some(last) = frame.blocks.last_mut() {
+			last.header.last = true;
+		}
+
+		self.writer.write(&frame.to_bytes()?)
 	}
 
 	// we write skippable frames manually as zstd-safe doesn't have an api
@@ -235,7 +281,11 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 				.to_vec(),
 		);
 
-		self.offset += self.write_compressed_frame(content)?;
+		self.offset += if self.compress {
+			self.write_compressed_frame(content)
+		} else {
+			self.write_uncompressed_frame(content)
+		}?;
 
 		// push frame to list
 		self.framelist.insert(

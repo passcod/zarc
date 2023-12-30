@@ -52,6 +52,14 @@ pub struct PackArgs {
 		value_parser = ParseZstdParam,
 	)]
 	pub zstd: Vec<ZstdParameter>,
+
+	/// Disable compression completely.
+	///
+	/// This will write all file content uncompressed, not even going through zstd at all.
+	///
+	/// Use this if you want to compress the entire zarc externally.
+	#[arg(long)]
+	pub store: bool,
 }
 
 #[derive(Clone)]
@@ -205,6 +213,10 @@ pub(crate) fn pack(args: PackArgs) -> std::io::Result<()> {
 	for param in args.zstd {
 		debug!(?param, "set zstd parameter");
 		zarc.set_zstd_parameter(param)?;
+	}
+
+	if args.store {
+		zarc.enable_compression(false);
 	}
 
 	for path in &args.paths {
