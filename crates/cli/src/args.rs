@@ -15,6 +15,7 @@ use crate::{debug::DebugArgs, pack::PackArgs};
 	bin_name = "zarc",
 	author,
 	version,
+	infer_subcommands = true,
 	after_help = "Want more detail? Try the long '--help' flag!",
 	after_long_help = "Didn't expect this much output? Use the short '-h' flag to get short help."
 )]
@@ -70,4 +71,10 @@ pub enum Action {
 
 	/// Walk a Zarc and print detailed information about its structure.
 	Debug(DebugArgs),
+}
+
+#[test]
+fn verify_cli() {
+	use clap::CommandFactory;
+	Args::command().debug_assert()
 }

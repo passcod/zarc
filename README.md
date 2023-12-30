@@ -246,7 +246,7 @@ Appending to a Zarc regenerates the keypair and re-signs every checksum, so the 
 
 Not great.
 
-### a gigabyte of node_modules
+### a gigabyte of node\_modules
 
 A Node.js's project `node_modules` is typically many small and medium files:
 
@@ -313,7 +313,7 @@ Summary
   - [ ] `-U` and `-u` flags to set user metadata
   - [ ] `--attest` and `--attest-file` to sign external content
   - [x] `--level` to set compression level
-  - [ ] `--zstd` to set Zstd parameters
+  - [x] `--zstd` to set Zstd parameters
   - [ ] Pack linux attributes
   - [ ] Pack linux xattrs
   - [ ] Pack mac attributes

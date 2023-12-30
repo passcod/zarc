@@ -7,8 +7,8 @@ use std::{
 
 use deku::{DekuContainerRead, DekuContainerWrite};
 use ed25519_dalek::{Signer, SigningKey};
-pub use zstd_safe::CParameter as ZstdParameter;
 use zstd_safe::{CCtx, ResetDirective};
+pub use zstd_safe::{CParameter as ZstdParameter, Strategy as ZstdStrategy};
 
 use crate::format::{
 	Digest, FilemapEntry, FrameEntry, HashAlgorithm, PublicKey, Signature, SignatureScheme,
