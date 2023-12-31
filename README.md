@@ -179,6 +179,12 @@ $ zarc unpack myfirst.zarc
 Internally, a Zarc is a content-addressed store with a directory of file metadata.
 If you have two copies of some identical file, Zarc stores the metadata for each copy, and one copy of the content.
 
+### Access to individual files
+
+A major issue with Tar and Tar-based formats is that you can't extract a single file or list all the files in the archive without reading (and decompressing) the entire file.
+Zarc's directory is read without reading nor decompressing the rest of the file, so listing files and metadata is always fast.
+Zarc also stores offsets to file contents within the directory, so individual files can be efficiently unpacked.
+
 ### Always-on integrity
 
 Zarc computes the cryptographic checksum of every file it packs, and verifies data when it unpacks.
