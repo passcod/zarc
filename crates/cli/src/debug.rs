@@ -136,7 +136,11 @@ fn parse_frame<'input>(
 			println!("  dictionary id: {d} ({d:08X})", d = frame.dictionary_id());
 		}
 
-		println!("  uncompressed size: {} bytes", frame.uncompressed_size());
+		println!(
+			"  uncompressed size: {} bytes ({:02x?})",
+			frame.uncompressed_size(),
+			frame.frame_content_size
+		);
 
 		if let Some(k) = frame.checksum {
 			println!("  checksum: 0x{k:08X}");
@@ -174,8 +178,11 @@ fn parse_frame<'input>(
 			zstd.init().map_err(map_zstd_error)?;
 
 			let mut buf: Vec<u8> = Vec::with_capacity(
-				(1024 * 128)
-					.max(frame.uncompressed_size() + 1024.max(frame.uncompressed_size() / 10)),
+				usize::try_from(
+					(1024 * 128)
+						.max(frame.uncompressed_size() + 1024.max(frame.uncompressed_size() / 10)),
+				)
+				.expect("too large for this arch"),
 			);
 			match zstd.decompress(&mut buf, &input).map_err(map_zstd_error) {
 				Ok(bytes) => {
@@ -225,10 +232,13 @@ fn parse_frame<'input>(
 					.ok_or_else(|| Error::other("failed allocating zstd context"))?;
 				zstd.init().map_err(map_zstd_error)?;
 
-				let mut buf: Vec<u8> = Vec::with_capacity(
-					(1024 * 128)
-						.max(frame.uncompressed_size() + 1024.max(frame.uncompressed_size() / 10)),
-				);
+				let mut buf: Vec<u8> =
+					Vec::with_capacity(
+						usize::try_from((1024 * 128).max(
+							frame.uncompressed_size() + 1024.max(frame.uncompressed_size() / 10),
+						))
+						.expect("too large for this arch"),
+					);
 				let bytes = match zstd.decompress(&mut buf, &input).map_err(map_zstd_error) {
 					Ok(bytes) => bytes,
 					Err(err) => {

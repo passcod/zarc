@@ -133,16 +133,33 @@ pub struct ZstandardFrame {
 
 impl ZstandardFrame {
 	/// The uncompressed length of the frame's content in bytes.
-	pub fn uncompressed_size(&self) -> usize {
-		let raw = self
-			.frame_content_size
-			.iter()
-			.fold(0, |acc, &x| acc << 8 | x as usize);
-
-		if self.frame_descriptor.fcs_length() == 2 {
-			raw + 256
-		} else {
-			raw
+	pub fn uncompressed_size(&self) -> u64 {
+		match self.frame_descriptor.fcs_length() {
+			0 => 0,
+			1 => u64::from(self.frame_content_size[0]),
+			2 => {
+				u64::from(u16::from_le_bytes([
+					self.frame_content_size[0],
+					self.frame_content_size[1],
+				])) + 256
+			}
+			4 => u64::from(u32::from_le_bytes([
+				self.frame_content_size[0],
+				self.frame_content_size[1],
+				self.frame_content_size[2],
+				self.frame_content_size[3],
+			])),
+			8 => u64::from_le_bytes([
+				self.frame_content_size[0],
+				self.frame_content_size[1],
+				self.frame_content_size[2],
+				self.frame_content_size[3],
+				self.frame_content_size[4],
+				self.frame_content_size[5],
+				self.frame_content_size[6],
+				self.frame_content_size[7],
+			]),
+			_ => unreachable!(),
 		}
 	}
 
