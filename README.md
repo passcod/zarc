@@ -198,6 +198,13 @@ You can generate an extra signature for external data with `--attest 'some conte
 This will print the signature for this data, and you can use that to prove authorship or provenance,
 or to hook into another PKI scheme.
 
+### Universal paths
+
+Paths are stored split into components, not as literal strings.
+On Windows a path looks like `crates\\cli\\src\\pack.rs` and on Unix a path looks like `crates/cli/src/pack.rs`.
+Instead of performing path translation, Zarc stores them as an array of components: `["crates", "cli", "src", "pack.rs"]`, so they get interpreted precisely and exactly the same on all platforms.
+Of course, some paths aren't Unicode, and Zarc recognises that and stores non-UTF-8 components marked as bytestringsinstead of text.
+
 ### User metadata
 
 Zarc already stores file attributes and extended attributes, and even stores directory and link metadata.
@@ -244,7 +251,8 @@ Appending to a Zarc regenerates the keypair and re-signs every checksum, so the 
 
 ## Performance
 
-Not great.
+Zarc will always lose out compared to "solid" archive formats like tar, solid rar, 7z... where the entire stream is compressed instead of each file separately.
+However, against Zip it's a better option: the deduplication and zstd compression yield better ratios than deflate, and the metadata includes POSIX details like ownership and mode.
 
 ### a gigabyte of node\_modules
 
@@ -262,48 +270,46 @@ max 1           min 1   mean 1          median 1
 20905472        0       6134.9564061426 822      # in bytes
 ```
 
-#### Baseline: tar + zstd
-
-```console
-$ /usr/bin/time tar caf node_modules.tar.zst node_modules
-1.31user 3.36system 0:06.92elapsed 78%CPU (0avgtext+0avgdata 4128maxresident)k
-0inputs+2170688outputs (0major+368minor)pagefaults 0swaps
-
-$ dust -sbn0 node_modules.tar.zst
-189M ┌── node_modules.tar.zst
-```
-
-#### Zarc [`5f49f2b`](https://github.com/passcod/zarc/commit/5f49f2b) (2023-12-30)
-
-```console
-$ /usr/bin/time zarc pack --output node_modules.zarc node_modules
-15.86user 5.83system 0:24.41elapsed 88%CPU (0avgtext+0avgdata 434032maxresident)k
-844768inputs+879120outputs (0major+307686minor)pagefaults 0swaps
-
-$ dust -sbn0 node_modules.zarc
-429M ┌── node_modules.zarc
-```
-
-4 times slower and 3 times larger... there's improvements to be found!
-
-#### Benchmark
+#### Packing speed
 
 ```console
 $ hyperfine --warmup 2 \
-  'tar caf node_modules.tar.zst node_modules' \
-  'zarc pack --output node_modules.zarc node_modules'
+  --prepare 'rm node_modules.tar.zst || true' \
+    'tar caf node_modules.tar.zst node_modules' \
+  --prepare 'rm node_modules.zip || true' \
+    'zip -qr node_modules.zip node_modules' \
+  --prepare 'rm node_modules.zarc || true' \
+    'zarc pack --output node_modules.zarc node_modules'
 
-Benchmark 1: tar cf node_modules.tar.zst node_modules
-  Time (mean ± σ):      7.022 s ±  0.547 s    [User: 1.402 s, System: 3.599 s]
-  Range (min … max):    6.508 s …  8.085 s    10 runs
+Benchmark 1: tar caf node_modules.tar.zst node_modules
+  Time (mean ± σ):      6.314 s ±  0.575 s    [User: 7.490 s, System: 3.074 s]
+  Range (min … max):    5.634 s …  7.274 s    10 runs
 
-Benchmark 2: zarc pack --output node_modules.zarc node_modules
-  Time (mean ± σ):     21.256 s ±  0.291 s    [User: 15.708 s, System: 5.098 s]
-  Range (min … max):   20.784 s … 21.768 s    10 runs
+Benchmark 2: zip -qr node_modules.zip node_modules
+  Time (mean ± σ):     93.204 s ±  3.677 s    [User: 82.452 s, System: 9.132 s]
+  Range (min … max):   88.393 s … 98.919 s    10 runs
+
+Benchmark 3: zarc pack --output node_modules.zarc node_modules
+  Time (mean ± σ):     17.864 s ±  1.172 s    [User: 13.911 s, System: 3.633 s]
+  Range (min … max):   16.791 s … 19.982 s    10 runs
 
 Summary
-  'tar cf node_modules.tar.zst node_modules' ran
-    3.03 ± 0.24 times faster than 'zarc pack --output node_modules.zarc node_modules'
+  'tar caf node_modules.tar.zst node_modules' ran
+    2.83 ± 0.32 times faster than 'target/release/zarc pack --output node_modules.zarc node_modules'
+   14.76 ± 1.47 times faster than 'zip -qr node_modules.zip node_modules'
+```
+
+#### Archive size
+
+```console
+$ dust -sbn0 node_modules.zarc
+429M ┌── node_modules.zarc
+
+$ dust -sbn0 node_modules.zip
+595M ┌── node_modules.zip
+
+$ dust -sbn0 node_modules.tar.zst
+189M ┌── node_modules.tar.zst
 ```
 
 ## TODO
@@ -312,6 +318,7 @@ Summary
   - [ ] `--append`
   - [ ] `-U` and `-u` flags to set user metadata
   - [ ] `--attest` and `--attest-file` to sign external content
+  - [ ] `--follow-symlinks` and variants
   - [x] `--level` to set compression level
   - [x] `--zstd` to set Zstd parameters
   - [ ] Pack linux attributes
