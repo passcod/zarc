@@ -251,8 +251,8 @@ Appending to a Zarc regenerates the keypair and re-signs every checksum, so the 
 
 ## Performance
 
-Zarc will always lose out compared to "solid" archive formats like tar, solid rar, 7z... where the entire stream is compressed instead of each file separately.
-However, against Zip it's a better option: the deduplication and zstd compression yield better ratios than deflate, and the metadata includes POSIX details like ownership and mode.
+In early testing, it's 2–4 times slower at packing than tar+zstd, but yields comparable (±10%) archive sizes.
+It's 3–10 times _faster_ than Linux's zip, and yields consistently 10-30% smaller archives.
 
 ### a gigabyte of node\_modules
 
@@ -268,6 +268,9 @@ $ dust -sbn0 node_modules
 $ find node_modules -type f -printf '%s\\n' | datamash \
 max 1           min 1   mean 1          median 1
 20905472        0       6134.9564061426 822      # in bytes
+
+$ find node_modules -type l | wc -l
+812 # symlinks
 ```
 
 #### Packing speed
@@ -275,41 +278,87 @@ max 1           min 1   mean 1          median 1
 ```console
 $ hyperfine --warmup 2 \
   --prepare 'rm node_modules.tar.zst || true' \
-    'tar caf node_modules.tar.zst node_modules' \
+    'tar -caf node_modules.tar.zst node_modules' \
   --prepare 'rm node_modules.zip || true' \
-    'zip -qr node_modules.zip node_modules' \
+    'zip -qr --symlinks node_modules.zip node_modules' \
   --prepare 'rm node_modules.zarc || true' \
     'zarc pack --output node_modules.zarc node_modules'
 
-Benchmark 1: tar caf node_modules.tar.zst node_modules
-  Time (mean ± σ):      6.314 s ±  0.575 s    [User: 7.490 s, System: 3.074 s]
-  Range (min … max):    5.634 s …  7.274 s    10 runs
+Benchmark 1: tar -caf node_modules.tar.zst node_modules
+  Time (mean ± σ):      7.273 s ±  0.636 s    [User: 8.587 s, System: 3.395 s]
+  Range (min … max):    5.806 s …  8.150 s    10 runs
 
-Benchmark 2: zip -qr node_modules.zip node_modules
-  Time (mean ± σ):     93.204 s ±  3.677 s    [User: 82.452 s, System: 9.132 s]
-  Range (min … max):   88.393 s … 98.919 s    10 runs
+Benchmark 2: zip -qr --symlinks node_modules.zip node_modules
+  Time (mean ± σ):     47.042 s ±  2.102 s    [User: 40.272 s, System: 6.038 s]
+  Range (min … max):   44.504 s … 49.788 s    10 runs
 
 Benchmark 3: zarc pack --output node_modules.zarc node_modules
-  Time (mean ± σ):     17.864 s ±  1.172 s    [User: 13.911 s, System: 3.633 s]
-  Range (min … max):   16.791 s … 19.982 s    10 runs
+  Time (mean ± σ):     11.093 s ±  0.180 s    [User: 8.375 s, System: 2.552 s]
+  Range (min … max):   10.873 s … 11.362 s    10 runs
 
 Summary
-  'tar caf node_modules.tar.zst node_modules' ran
-    2.83 ± 0.32 times faster than 'target/release/zarc pack --output node_modules.zarc node_modules'
-   14.76 ± 1.47 times faster than 'zip -qr node_modules.zip node_modules'
+  'tar -caf node_modules.tar.zst node_modules' ran
+    1.53 ± 0.14 times faster than 'zarc pack --output node_modules.zarc node_modules'
+    6.47 ± 0.64 times faster than 'zip -qr --symlinks node_modules.zip node_modules'
 ```
 
 #### Archive size
 
 ```console
+$ dust -sbn0 node_modules.tar.zst
+189M ┌── node_modules.tar.zst
+
+$ dust -sbn0 node_modules.zip
+301M ┌── node_modules.zip
+
 $ dust -sbn0 node_modules.zarc
-429M ┌── node_modules.zarc
+209M ┌── node_modules.zarc
+```
+
+### node\_modules, following symlinks
+
+That same workload, but following/dereferencing symlinks.
+
+#### Packing speed
+
+```console
+$ hyperfine --warmup 2 \
+  --prepare 'rm node_modules.tar.zst || true' \
+    'tar -chaf node_modules.tar.zst node_modules' \
+  --prepare 'rm node_modules.zip || true' \
+    'zip -qr node_modules.zip node_modules' \
+  --prepare 'rm node_modules.zarc || true' \
+    'zarc pack -L --output node_modules.zarc node_modules'
+
+Benchmark 1: tar -chaf node_modules.tar.zst node_modules
+  Time (mean ± σ):     11.399 s ±  0.899 s    [User: 13.156 s, System: 4.591 s]
+  Range (min … max):   10.369 s … 13.036 s    10 runs
+
+Benchmark 2: zip -qr node_modules.zip node_modules
+  Time (mean ± σ):     89.879 s ±  3.751 s    [User: 79.802 s, System: 8.216 s]
+  Range (min … max):   84.980 s … 95.516 s    10 runs
+
+Benchmark 3: zarc pack -L --output node_modules.zarc node_modules
+  Time (mean ± σ):     16.526 s ±  0.380 s    [User: 12.961 s, System: 3.340 s]
+  Range (min … max):   16.146 s … 17.515 s    10 runs
+
+Summary
+  'tar -chaf node_modules.tar.zst node_modules' ran
+    1.45 ± 0.12 times faster than 'zarc pack -L --output node_modules.zarc node_modules'
+    7.88 ± 0.70 times faster than 'zip -qr node_modules.zip node_modules'
+```
+
+#### Archive size
+
+```console
+$ dust -sbn0 node_modules.tar.zst
+431M ┌── node_modules.tar.zst
 
 $ dust -sbn0 node_modules.zip
 595M ┌── node_modules.zip
 
-$ dust -sbn0 node_modules.tar.zst
-189M ┌── node_modules.tar.zst
+$ dust -sbn0 node_modules.zarc
+429M ┌── node_modules.zarc
 ```
 
 ## TODO
@@ -318,7 +367,8 @@ $ dust -sbn0 node_modules.tar.zst
   - [ ] `--append`
   - [ ] `-U` and `-u` flags to set user metadata
   - [ ] `--attest` and `--attest-file` to sign external content
-  - [ ] `--follow-symlinks` and variants
+  - [x] `--follow-symlinks`
+  - [ ] `--follow[-and-store]-external-symlinks`
   - [x] `--level` to set compression level
   - [x] `--zstd` to set Zstd parameters
   - [ ] Pack linux attributes
@@ -342,3 +392,4 @@ $ dust -sbn0 node_modules.tar.zst
 - [ ] Streaming unpacking
 - [ ] Profile and optimise
 - [ ] Pure rust zstd?
+  - [ ] Seekable files by adding a blockmap (map of file offsets to blocks)?
