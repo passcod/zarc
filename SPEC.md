@@ -327,17 +327,20 @@ Implementations SHOULD ignore unknown or impractical special types.
 
   - `1` — directory entry.
     May be used to encode metadata or (x)attributes against a directory.
-  - `10` — internal hardlink.
+  - `10` — unspecified link.
+    MUST be followed by the pathname of the link target.
+    Implementations can interpret this however they see fit.
+  - `11` — internal hardlink.
     MUST be followed by the pathname of another file contained in this Zarc.
-  - `11` — external hardlink.
+  - `12` — external hardlink.
     MUST be followed by the absolute pathname of a file to hardlink to.
     Implementations MAY reject this (e.g. for security reasons).
-  - `12` — internal symlink.
+  - `13` — internal symlink.
     MUST be followed by the pathname of another file contained in this Zarc.
-  - `13` — external absolute symlink.
+  - `14` — external absolute symlink.
     MUST be followed by the absolute pathname of a file to symlink to.
     Implementations MAY reject this (e.g. for security reasons).
-  - `14` — external relative symlink.
+  - `15` — external relative symlink.
     MUST be followed by the relative pathname of a file to symlink to.
     Implementations MAY reject this (e.g. for security reasons).
 

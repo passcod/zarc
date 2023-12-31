@@ -1,6 +1,11 @@
 //! Common types defining the binary format structures.
 
-use std::{collections::HashMap, time::SystemTime};
+use std::{
+	collections::HashMap,
+	ffi::OsStr,
+	path::{Component, Path},
+	time::SystemTime,
+};
 
 use deku::prelude::*;
 use minicbor::{data::Type, Decode, Decoder, Encode, Encoder};
@@ -286,6 +291,23 @@ pub struct Pathname(
 	// double space is from rustfmt: https://github.com/rust-lang/rustfmt/issues/5997
 );
 
+impl Pathname {
+	/// Converts a Path, ignoring all non-normal components.
+	pub fn from_normal_components(path: &Path) -> Self {
+		Self(
+			path.components()
+				.filter_map(|c| {
+					if let Component::Normal(comp) = c {
+						Some(CborString::from(comp))
+					} else {
+						None
+					}
+				})
+				.collect(),
+		)
+	}
+}
+
 /// CBOR Text or Byte string.
 #[derive(Clone, Debug, PartialEq)]
 pub enum CborString {
@@ -294,6 +316,36 @@ pub enum CborString {
 
 	/// Non-unicode byte string value.
 	Binary(Vec<u8>),
+}
+
+impl From<&OsStr> for CborString {
+	fn from(string: &OsStr) -> Self {
+		if let Some(unicode) = string.to_str() {
+			Self::String(unicode.into())
+		} else {
+			#[cfg(unix)]
+			{
+				use std::os::unix::ffi::OsStrExt;
+				Self::Binary(string.as_bytes().into())
+			}
+			#[cfg(not(unix))]
+			{
+				Self::Binary(string.as_encoded_bytes().into())
+			}
+		}
+	}
+}
+
+impl From<&str> for CborString {
+	fn from(string: &str) -> Self {
+		Self::String(string.into())
+	}
+}
+
+impl From<String> for CborString {
+	fn from(string: String) -> Self {
+		Self::String(string)
+	}
 }
 
 impl<C> Encode<C> for CborString {
@@ -345,6 +397,21 @@ pub enum AttributeValue {
 
 	/// A string.
 	String(CborString),
+}
+
+impl From<bool> for AttributeValue {
+	fn from(b: bool) -> Self {
+		Self::Boolean(b)
+	}
+}
+
+impl<T> From<T> for AttributeValue
+where
+	T: Into<CborString>,
+{
+	fn from(string: T) -> Self {
+		Self::String(string.into())
+	}
 }
 
 impl<C> Encode<C> for AttributeValue {
@@ -492,29 +559,35 @@ pub enum SpecialFileKind {
 	#[n(1)]
 	Directory = 1,
 
+	/// A link.
+	///
+	/// Some kind of link, but without specifying what exactly it is.
+	#[n(10)]
+	Link = 10,
+
 	/// Internal hardlink.
 	///
 	/// Must point to a file that exists within this Zarc.
-	#[n(10)]
-	InternalHardlink = 10,
+	#[n(11)]
+	InternalHardlink = 11,
 
 	/// External hardlink.
-	#[n(11)]
-	ExternalHardlink = 11,
+	#[n(12)]
+	ExternalHardlink = 12,
 
 	/// Internal symbolic link.
 	///
 	/// Must point to a file that exists within this Zarc.
-	#[n(12)]
-	InternalSymlink = 12,
+	#[n(13)]
+	InternalSymlink = 13,
 
 	/// External absolute symbolic link.
-	#[n(13)]
-	ExternalAbsoluteSymlink = 13,
+	#[n(14)]
+	ExternalAbsoluteSymlink = 14,
 
 	/// External relative symbolic link.
-	#[n(14)]
-	ExternalRelativeSymlink = 14,
+	#[n(15)]
+	ExternalRelativeSymlink = 15,
 }
 
 /// Target of link (for [`SpecialFile`])
@@ -527,6 +600,26 @@ pub enum LinkTarget {
 
 	/// Target as array of path components.
 	Components(Vec<CborString>),
+}
+
+impl From<Pathname> for LinkTarget {
+	fn from(pathname: Pathname) -> Self {
+		Self::Components(pathname.0)
+	}
+}
+
+impl From<&Path> for LinkTarget {
+	fn from(path: &Path) -> Self {
+		if path.is_absolute()
+			|| path
+				.components()
+				.any(|c| !matches!(c, Component::Normal(_)))
+		{
+			Self::FullPath(CborString::from(path.as_os_str()))
+		} else {
+			Self::from(Pathname::from_normal_components(path))
+		}
+	}
 }
 
 impl<C> Encode<C> for LinkTarget {

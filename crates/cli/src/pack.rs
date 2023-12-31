@@ -1,7 +1,7 @@
 use std::{
 	collections::HashMap,
-	fs::{File, Metadata},
-	path::{Component, PathBuf},
+	fs::{read_link, File, FileType, Metadata},
+	path::PathBuf,
 	time::SystemTime,
 };
 
@@ -11,7 +11,10 @@ use tracing::{debug, info};
 use walkdir::WalkDir;
 use zarc::{
 	encode::{Encoder, ZstdParameter, ZstdStrategy},
-	format::{AttributeValue, CborString, Digest, FilemapEntry, Pathname, PosixOwner, Timestamps},
+	format::{
+		AttributeValue, Digest, FilemapEntry, Pathname, PosixOwner, SpecialFile, SpecialFileKind,
+		Timestamps,
+	},
 };
 
 #[derive(Debug, Clone, Parser)]
@@ -57,9 +60,38 @@ pub struct PackArgs {
 	///
 	/// This will write all file content uncompressed, not even going through zstd at all.
 	///
-	/// Use this if you want to compress the entire zarc externally.
+	/// Use this if you want to compress the entire Zarc externally.
 	#[arg(long)]
 	pub store: bool,
+
+	/// Follow symlinks.
+	///
+	/// This destroys symlinks inside the Zarc: when unpacked, files will be duplicated.
+	///
+	/// You may want '--follow-external-symlinks' instead.
+	#[arg(long, short = 'L')]
+	pub follow_symlinks: bool,
+
+	/// Follow external symlinks.
+	///
+	/// By default, zarc stores all symlinks as symlinks. If symlinks point to content external to
+	/// the Zarc, the symlink when unpacked may point somewhere different or break.
+	///
+	/// With this flag, zarc will evaluate symlinks and store them as symlinks if they are relative
+	/// symlinks that point to other files in the Zarc, but will follow symlinks (and flatten them
+	/// into stored files) if they are absolute or relative but pointing "outside" of the Zarc.
+	///
+	/// See also the variant '--follow-and-store-external-symlinks'.
+	#[arg(long, hide = true)]
+	pub follow_external_symlinks: bool,
+
+	/// Follow external symlinks, but also store the symlink target.
+	///
+	/// Like '--follow-external-symlinks', but stores the symlink's original external target path
+	/// alongside the stored file content. When unpacking, Zarc can decide to restore external symlinks
+	/// or to unpack the stored content.
+	#[arg(long, hide = true)]
+	pub follow_and_store_external_symlinks: bool,
 }
 
 #[derive(Clone)]
@@ -221,7 +253,7 @@ pub(crate) fn pack(args: PackArgs) -> std::io::Result<()> {
 
 	for path in &args.paths {
 		info!("walk {path:?}");
-		for entry in WalkDir::new(path).follow_links(true) {
+		for entry in WalkDir::new(path).follow_links(args.follow_symlinks) {
 			let file = match entry {
 				Ok(file) => file,
 				Err(err) => {
@@ -233,28 +265,23 @@ pub(crate) fn pack(args: PackArgs) -> std::io::Result<()> {
 			let filename = file.path();
 			debug!("read {filename:?}");
 
+			let name = Pathname::from_normal_components(filename);
 			let meta = file.metadata()?;
-			if !meta.is_file() {
-				continue;
-			}
+			let link_target = if file.path_is_symlink() {
+				Some(read_link(file.path())?)
+			} else {
+				None
+			};
 
-			let file = std::fs::read(&filename)?;
-			let hash = zarc.add_data_frame(&file)?;
-			let name = Pathname(
-				filename
-					.components()
-					.filter_map(|c| {
-						if let Component::Normal(comp) = c {
-							// TODO: better, with binary and to_str()
-							Some(CborString::String(comp.to_string_lossy().into()))
-						} else {
-							None
-						}
-					})
-					.collect(),
-			);
+			let filetype = file.file_type();
+			let hash = if filetype.is_file() {
+				let file = std::fs::read(&filename)?;
+				Some(zarc.add_data_frame(&file)?)
+			} else {
+				None
+			};
 
-			zarc.add_file_entry(filemap(name, &meta, hash)?)?;
+			zarc.add_file_entry(filemap(name, filetype, meta, link_target, hash)?)?;
 		}
 	}
 
@@ -266,18 +293,32 @@ pub(crate) fn pack(args: PackArgs) -> std::io::Result<()> {
 
 pub(crate) fn filemap(
 	name: Pathname,
-	meta: &Metadata,
-	hash: Digest,
+	filetype: FileType,
+	meta: Metadata,
+	link_target: Option<PathBuf>,
+	frame_hash: Option<Digest>,
 ) -> std::io::Result<FilemapEntry> {
 	let perms = meta.permissions();
 	Ok(FilemapEntry {
-		frame_hash: Some(hash),
+		frame_hash,
 		name,
 		user: owner_user(&meta),
 		group: owner_group(&meta),
 		mode: posix_mode(&meta),
 		readonly: Some(perms.readonly()),
-		special: None,
+		special: if filetype.is_dir() {
+			Some(SpecialFile {
+				kind: Some(SpecialFileKind::Directory),
+				link_target: None,
+			})
+		} else if filetype.is_symlink() {
+			Some(SpecialFile {
+				kind: Some(SpecialFileKind::Link),
+				link_target: link_target.map(|path| path.as_path().into()),
+			})
+		} else {
+			None
+		},
 		timestamps: Some(Timestamps {
 			inserted: Some(SystemTime::now()),
 			created: meta.created().ok(),
