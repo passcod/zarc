@@ -257,7 +257,6 @@ Appending to a Zarc regenerates the keypair and re-signs every checksum, so the 
 ### Limitations
 
 - Compression is per unique file, so it won't achieve compression gains across similar-but-not-identical files.
-- There's an uncompressed overhead per unique file, so if you have a lot of small _unique_ files, it can be less efficient compared to tar+zstd which may squash the per-file overhead as well as the file content.
 
 ## Performance
 
