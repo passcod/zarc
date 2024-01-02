@@ -3,6 +3,7 @@
 use std::{
 	collections::HashMap,
 	ffi::OsStr,
+	fmt,
 	path::{Component, Path},
 	time::SystemTime,
 };
@@ -568,7 +569,6 @@ impl<'b, C> Decode<'b, C> for PosixOwner {
 }
 
 /// Directory Filemap Entry Timestamps.
-// TODO: chrono
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
 #[cbor(map)]
 pub struct Timestamps {
@@ -624,6 +624,12 @@ impl From<DateTime<Utc>> for Timestamp {
 impl From<Timestamp> for DateTime<Utc> {
 	fn from(ts: Timestamp) -> Self {
 		ts.0
+	}
+}
+
+impl fmt::Display for Timestamp {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		write!(f, "{}", self.0)
 	}
 }
 

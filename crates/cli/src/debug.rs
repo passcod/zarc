@@ -4,7 +4,6 @@ use std::{
 };
 
 use blake3::Hash;
-use chrono::{DateTime, Utc};
 use clap::{Parser, ValueHint};
 use deku::DekuContainerRead;
 use ed25519_dalek::{Signature, VerifyingKey};
@@ -298,6 +297,8 @@ fn parse_frame<'input>(
 						}
 					}
 
+					println!("    created at: {}", directory.written_at);
+
 					println!("    files: {}", directory.filemap.len());
 					for (i, file) in directory.filemap.iter().enumerate() {
 						if let Some(hash) = &file.frame_hash {
@@ -342,8 +343,12 @@ fn parse_frame<'input>(
 							}
 						}
 
+						if let Some(n) = file.version_added {
+							println!("        version added: -{}", (n + 1));
+						}
+
 						if let Some(ro) = file.readonly {
-							println!("        readonly: {}", ro);
+							println!("        readonly: {ro}");
 						}
 
 						if let Some(mode) = file.mode {
@@ -385,20 +390,16 @@ fn parse_frame<'input>(
 						if let Some(ts) = &file.timestamps {
 							println!("        timestamps:");
 							if let Some(inserted) = ts.inserted {
-								let dt = DateTime::<Utc>::from(inserted);
-								println!("          inserted: {dt}");
+								println!("          inserted: {inserted}");
 							}
 							if let Some(created) = ts.created {
-								let dt = DateTime::<Utc>::from(created);
-								println!("          created: {dt}");
+								println!("          created: {created}");
 							}
 							if let Some(modified) = ts.modified {
-								let dt = DateTime::<Utc>::from(modified);
-								println!("          modified: {dt}");
+								println!("          modified: {modified}");
 							}
 							if let Some(accessed) = ts.accessed {
-								let dt = DateTime::<Utc>::from(accessed);
-								println!("          accessed: {dt}");
+								println!("          accessed: {accessed}");
 							}
 						}
 
@@ -444,6 +445,9 @@ fn parse_frame<'input>(
 							"        uncompressed size: {} bytes",
 							file.uncompressed_size
 						);
+						if let Some(n) = file.version_added {
+							println!("        version added: -{}", (n + 1));
+						}
 
 						print!("        signature: {}", bs64::encode(&file.signature));
 						let sig = Signature::try_from(file.signature.as_slice())
@@ -472,6 +476,37 @@ fn parse_frame<'input>(
 							println!("    user metadata:");
 							for (k, v) in meta {
 								println!("      {k}: {v:?}");
+							}
+						}
+					}
+
+					if let Some(versions) = directory.prior_versions {
+						if versions.is_empty() {
+							println!("    versions: present, but empty");
+						} else {
+							println!("    versions: {}", versions.len());
+							for (n, version) in versions.iter().enumerate() {
+								println!("      {}: -{}", (n + 1), version.written_at);
+								println!("        hash algorithm: {:?}", version.hash_algorithm);
+								println!(
+									"        signature scheme: {:?}",
+									version.signature_scheme
+								);
+								println!(
+									"        public key: {}",
+									bs64::encode(&version.public_key)
+								);
+
+								if let Some(meta) = &version.user_metadata {
+									if meta.is_empty() {
+										println!("        user metadata: present, but empty");
+									} else {
+										println!("        user metadata:");
+										for (k, v) in meta {
+											println!("          {k}: {v:?}");
+										}
+									}
+								}
 							}
 						}
 					}
