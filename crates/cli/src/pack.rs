@@ -1,9 +1,4 @@
-use std::{
-	collections::HashMap,
-	fs::{read_link, File, FileType, Metadata},
-	path::PathBuf,
-	time::SystemTime,
-};
+use std::{fs::File, path::PathBuf};
 
 use clap::{Parser, ValueHint};
 use rand::rngs::OsRng;
@@ -11,10 +6,7 @@ use tracing::{debug, info};
 use walkdir::WalkDir;
 use zarc::{
 	encode::{Encoder, ZstdParameter, ZstdStrategy},
-	format::{
-		AttributeValue, Digest, FilemapEntry, Pathname, PosixOwner, SpecialFile, SpecialFileKind,
-		Timestamps,
-	},
+	metadata::build_filemap,
 };
 
 #[derive(Debug, Clone, Parser)]
@@ -254,7 +246,7 @@ pub(crate) fn pack(args: PackArgs) -> std::io::Result<()> {
 	for path in &args.paths {
 		info!("walk {path:?}");
 		for entry in WalkDir::new(path).follow_links(args.follow_symlinks) {
-			let file = match entry {
+			let entry = match entry {
 				Ok(file) => file,
 				Err(err) => {
 					eprintln!("read error: {err}");
@@ -262,26 +254,17 @@ pub(crate) fn pack(args: PackArgs) -> std::io::Result<()> {
 				}
 			};
 
-			let filename = file.path();
+			let filename = entry.path();
 			debug!("read {filename:?}");
 
-			let name = Pathname::from_normal_components(filename);
-			let meta = file.metadata()?;
-			let link_target = if file.path_is_symlink() {
-				Some(read_link(file.path())?)
-			} else {
-				None
-			};
-
-			let filetype = file.file_type();
-			let hash = if filetype.is_file() {
+			let hash = if entry.file_type().is_file() {
 				let file = std::fs::read(&filename)?;
 				Some(zarc.add_data_frame(&file)?)
 			} else {
 				None
 			};
 
-			zarc.add_file_entry(filemap(name, filetype, meta, link_target, hash)?)?;
+			zarc.add_file_entry(build_filemap(filename, args.follow_symlinks, hash)?)?;
 		}
 	}
 
@@ -289,124 +272,4 @@ pub(crate) fn pack(args: PackArgs) -> std::io::Result<()> {
 	let public_key = zarc.finalise()?;
 	println!("zarc public key: {}", bs64::encode(&public_key));
 	Ok(())
-}
-
-pub(crate) fn filemap(
-	name: Pathname,
-	filetype: FileType,
-	meta: Metadata,
-	link_target: Option<PathBuf>,
-	frame_hash: Option<Digest>,
-) -> std::io::Result<FilemapEntry> {
-	let perms = meta.permissions();
-	Ok(FilemapEntry {
-		frame_hash,
-		name,
-		user: owner_user(&meta),
-		group: owner_group(&meta),
-		mode: posix_mode(&meta),
-		readonly: Some(perms.readonly()),
-		special: if filetype.is_dir() {
-			Some(SpecialFile {
-				kind: Some(SpecialFileKind::Directory),
-				link_target: None,
-			})
-		} else if filetype.is_symlink() {
-			Some(SpecialFile {
-				kind: Some(SpecialFileKind::Link),
-				link_target: link_target.map(|path| path.as_path().into()),
-			})
-		} else {
-			None
-		},
-		timestamps: Some(Timestamps {
-			inserted: Some(SystemTime::now()),
-			created: meta.created().ok(),
-			modified: meta.modified().ok(),
-			accessed: meta.accessed().ok(),
-		}),
-		attributes: file_attributes(&meta),
-		extended_attributes: None,
-		user_metadata: None,
-	})
-}
-
-#[cfg(unix)]
-pub(crate) fn owner_user(meta: &Metadata) -> Option<PosixOwner> {
-	use std::os::unix::fs::MetadataExt;
-	Some(PosixOwner {
-		id: Some(meta.uid() as _),
-		name: None,
-	})
-}
-
-#[cfg(not(unix))]
-pub(crate) fn owner_user(_meta: &Metadata) -> Option<PosixOwner> {
-	None
-}
-
-#[cfg(unix)]
-pub(crate) fn owner_group(meta: &Metadata) -> Option<PosixOwner> {
-	use std::os::unix::fs::MetadataExt;
-	Some(PosixOwner {
-		id: Some(meta.gid() as _),
-		name: None,
-	})
-}
-
-#[cfg(not(unix))]
-pub(crate) fn owner_group(_meta: &Metadata) -> Option<PosixOwner> {
-	None
-}
-
-#[cfg(unix)]
-pub(crate) fn posix_mode(meta: &Metadata) -> Option<u32> {
-	use std::os::unix::fs::MetadataExt;
-	Some(meta.mode())
-}
-
-#[cfg(not(unix))]
-pub(crate) fn posix_mode(_meta: &Metadata) -> Option<u32> {
-	None
-}
-
-#[cfg(windows)]
-pub(crate) fn file_attributes(meta: &Metadata) -> Option<HashMap<String, AttributeValue>> {
-	use std::os::windows::fs::MetadataExt;
-	use windows::Win32::Storage::FileSystem;
-
-	let attrs = meta.file_attributes();
-
-	Some(
-		[
-			("hidden", attrs & FileSystem::FILE_ATTRIBUTE_HIDDEN != 0),
-			("system", attrs & FileSystem::FILE_ATTRIBUTE_SYSTEM != 0),
-			("archive", attrs & FileSystem::FILE_ATTRIBUTE_ARCHIVE != 0),
-			(
-				"temporary",
-				attrs & FileSystem::FILE_ATTRIBUTE_TEMPORARY != 0,
-			),
-			("sparse", attrs & FileSystem::FILE_ATTRIBUTE_SPARSE != 0),
-			(
-				"compressed",
-				attrs & FileSystem::FILE_ATTRIBUTE_COMPRESSED != 0,
-			),
-			(
-				"not-content-indexed",
-				attrs & FileSystem::FILE_ATTRIBUTE_NOT_CONTENT_INDEXED != 0,
-			),
-			(
-				"encrypted",
-				attrs & FileSystem::FILE_ATTRIBUTE_ENCRYPTED != 0,
-			),
-		]
-		.into_iter()
-		.map(|(k, v)| (format!("win32.{k}"), AttributeValue::Boolean(v)))
-		.collect(),
-	)
-}
-
-#[cfg(not(windows))]
-pub(crate) fn file_attributes(_meta: &Metadata) -> Option<HashMap<String, AttributeValue>> {
-	None
 }
