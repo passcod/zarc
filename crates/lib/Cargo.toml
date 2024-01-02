@@ -21,9 +21,12 @@ log = "0.4.20"
 minicbor = { version = "0.20.0", features = ["derive", "std"] }
 rand_core = "0.6.4"
 tracing = "0.1.40"
-xattr = "1.2.0"
+xattr = { version = "1.2.0", optional = true }
 zstd = "0.13.0"
 zstd-safe = { version = "7.0.0", features = ["std"] }
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.27.1", features = ["fs"], optional = true }
 
 [target.'cfg(target_os="linux")'.dependencies]
 e2p-fileflags = { version = "0.1.0", optional = true }
@@ -35,7 +38,7 @@ windows = { version = "0.52.0", features = ["Win32_Storage_FileSystem"], optiona
 default = ["metadata"]
 
 ## Enable the metadata gathering module, which pulls in platform-specific libraries
-metadata = ["dep:e2p-fileflags", "dep:windows"]
+metadata = ["dep:e2p-fileflags", "dep:nix", "dep:windows", "dep:xattr"]
 
 [package.metadata.docs.rs]
 all-features = true

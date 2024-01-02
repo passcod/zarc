@@ -385,7 +385,7 @@ $ dust -sbn0 node_modules.zarc
   - [x] Pack linux xattrs
   - [ ] Pack linux ACLS
   - [ ] Pack SELinux attributes
-  - [ ] Pack mac attributes
+  - [x] Pack mac attributes
   - [x] Pack mac xattrs
   - [x] Pack windows attributes
   - [ ] Pack windows alternate data stream extended attributes

@@ -171,12 +171,22 @@ pub fn posix_mode(meta: &Metadata) -> Option<u32> {
 /// - `no-cow` for `NOCOW` or [the `C` flag](https://man.archlinux.org/man/chattr.1#C)
 /// - `not-compressed` for `NOCOMPR` or [the `m` flag](https://man.archlinux.org/man/chattr.1#m)
 ///
+/// ## MacOS, iOS, FreeBSD, NetBSD
+///
+/// Translates present [`chflags`][chflags] flags to boolean true at string keys,
+/// prefixed by `bsd.`. Some flags are not translated; this list is exhaustive:
+///
+/// - `append-only` for `SF_APPEND` or `UF_APPEND`
+/// - `archived` for `SF_ARCHIVED`
+/// - `immutable` for `SF_IMMUTABLE` or `UF_IMMUTABLE`
+/// - `no-backup` for `UF_NODUMP`
+///
 /// ## Windows
 ///
 /// Translates present [`FILE_ATTRIBUTE_*`][win32-file-attrs] flags to boolean true at string keys,
 /// prefixed by `win32.`. Some flags are not translated; this list is exhaustive:
 ///
-/// - `archive` for `FILE_ATTRIBUTE_ARCHIVE`
+/// - `archived` for `FILE_ATTRIBUTE_ARCHIVE`
 /// - `compressed` for `FILE_ATTRIBUTE_COMPRESSED`
 /// - `encrypted` for `FILE_ATTRIBUTE_ENCRYPTED`
 /// - `hidden` for `FILE_ATTRIBUTE_HIDDEN`
@@ -187,6 +197,7 @@ pub fn posix_mode(meta: &Metadata) -> Option<u32> {
 /// - `temporary` for `FILE_ATTRIBUTE_TEMPORARY`
 ///
 /// [chattr]: https://man.archlinux.org/man/chattr.1
+/// [chflags]: https://man.freebsd.org/cgi/man.cgi?query=chflags&sektion=1&apropos=0&manpath=FreeBSD+14.0-RELEASE+and+Ports
 /// [win32-file-attrs]: https://learn.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants
 #[instrument(level = "trace")]
 pub fn file_attributes(
@@ -197,7 +208,7 @@ pub fn file_attributes(
 	{
 		use e2p_fileflags::{FileFlags, Flags};
 		let flags = path.flags()?;
-		Ok(Some(
+		return Ok(Some(
 			[
 				("append-only", flags.contains(Flags::APPEND)),
 				("casefold", flags.contains(Flags::CASEFOLD)),
@@ -217,7 +228,37 @@ pub fn file_attributes(
 			.filter(|(_, v)| *v)
 			.map(|(k, _)| (format!("linux.{k}"), AttributeValue::Boolean(true)))
 			.collect(),
-		))
+		));
+	}
+
+	#[cfg(any(
+		target_os = "macos",
+		target_os = "ios",
+		target_os = "freebsd",
+		target_os = "netbsd"
+	))]
+	{
+		use nix::sys::stat::{stat, FileFlag};
+		let flags = stat(path)?.st_flags;
+		return Ok(Some(
+			[
+				(
+					"append-only",
+					flags.contains(FileFlag::SF_APPEND) || flags.contains(FileFlags::UF_APPEND),
+				),
+				("archived", flags.contains(FileFlag::ARCHIVED)),
+				(
+					"immutable",
+					flags.contains(FileFlag::SF_IMMUTABLE)
+						|| flags.contains(FileFlag::UF_IMMUTABLE),
+				),
+				("no-backup", flags.contains(FileFlag::UF_NODUMP)),
+			]
+			.into_iter()
+			.filter(|(_, v)| *v)
+			.map(|(k, _)| (format!("bsd.{k}"), AttributeValue::Boolean(true)))
+			.collect(),
+		));
 	}
 
 	#[cfg(windows)]
@@ -227,9 +268,9 @@ pub fn file_attributes(
 
 		let attrs = meta.file_attributes();
 
-		Ok(Some(
+		return Ok(Some(
 			[
-				("archive", attrs & FileSystem::FILE_ATTRIBUTE_ARCHIVE != 0),
+				("archived", attrs & FileSystem::FILE_ATTRIBUTE_ARCHIVE != 0),
 				(
 					"compressed",
 					attrs & FileSystem::FILE_ATTRIBUTE_COMPRESSED != 0,
@@ -254,16 +295,14 @@ pub fn file_attributes(
 			.filter(|(_, v)| *v)
 			.map(|(k, _)| (format!("win32.{k}"), AttributeValue::Boolean(true)))
 			.collect(),
-		))
+		));
 	}
 
-	#[cfg(not(any(target_os = "linux", windows)))]
-	{
-		Ok(None)
-	}
+	#[allow(unreachable_code)]
+	Ok(None)
 }
 
-/// Get attributes for a file, given its path.
+/// Get extended attributes for a file, given its path.
 ///
 /// Returns `Ok(None)` on unsupported systems.
 ///
