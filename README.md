@@ -377,7 +377,7 @@ $ dust -sbn0 node_modules.zarc
   - [ ] `--follow[-and-store]-external-symlinks`
   - [x] `--level` to set compression level
   - [x] `--zstd` to set Zstd parameters
-  - [ ] Pack linux attributes
+  - [x] Pack linux attributes
   - [ ] Pack linux xattrs
   - [ ] Pack mac attributes
   - [ ] Pack mac xattrs

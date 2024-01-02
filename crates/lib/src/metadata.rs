@@ -3,6 +3,7 @@
 use std::{
 	collections::HashMap,
 	fs::{self, Metadata},
+	io::Result,
 	path::Path,
 	time::SystemTime,
 };
@@ -24,26 +25,26 @@ use crate::format::{
 /// [`readdir(3)`]: https://man.archlinux.org/man/readdir.3
 #[instrument(level = "trace")]
 pub fn build_filemap(
-	filename: &Path,
+	path: &Path,
 	follow_links: bool,
 	frame_hash: Option<Digest>,
-) -> std::io::Result<FilemapEntry> {
-	let name = Pathname::from_normal_components(filename);
+) -> Result<FilemapEntry> {
+	let name = Pathname::from_normal_components(path);
 
 	trace!("reading immediate metadata");
-	let symeta = fs::symlink_metadata(filename)?;
+	let symeta = fs::symlink_metadata(path)?;
 	let is_symlink = symeta.is_symlink();
 
 	let link_target = if is_symlink {
 		trace!("reading link target");
-		Some(fs::read_link(filename)?)
+		Some(fs::read_link(path)?)
 	} else {
 		None
 	};
 
 	let meta = if follow_links && is_symlink {
 		trace!("reading metadata");
-		fs::metadata(filename)?
+		fs::metadata(path)?
 	} else {
 		symeta
 	};
@@ -73,7 +74,7 @@ pub fn build_filemap(
 			None
 		},
 		timestamps: Some(timestamps(&meta)),
-		attributes: file_attributes(&meta),
+		attributes: file_attributes(path, &meta)?,
 		extended_attributes: None,
 		user_metadata: None,
 	})
@@ -149,20 +150,76 @@ pub fn posix_mode(meta: &Metadata) -> Option<u32> {
 
 /// Get attributes for a file, given its path and [`Metadata`].
 ///
+/// Returns `Ok(None)` on unsupported systems.
+///
+/// ## Linux
+///
+/// Translates present [`lsattr`/`chattr`][chattr] flags to boolean true at string keys,
+/// prefixed by `linux.`. Some flags are not translated; this list is exhaustive:
+///
+/// - `append-only` for `APPEND` or [the `a` flag](https://man.archlinux.org/man/chattr.1#a)
+/// - `casefold` for `CASEFOLD` or [the `F` flag](https://man.archlinux.org/man/chattr.1#F)
+/// - `compressed` for `COMPR` or [the `c` flag](https://man.archlinux.org/man/chattr.1#c)
+/// - `delete-undo` for `UNRM` or [the `u` flag](https://man.archlinux.org/man/chattr.1#u)
+/// - `delete-zero` for `SECRM` or [the `s` flag](https://man.archlinux.org/man/chattr.1#s)
+/// - `dir-sync` for `DIRSYNC` or [the `D` flag](https://man.archlinux.org/man/chattr.1#D)
+/// - `encrypted` for `ENCRYPT` or [the `E` flag](https://man.archlinux.org/man/chattr.1#E)
+/// - `file-sync` for `SYNC` or [the `S` flag](https://man.archlinux.org/man/chattr.1#S)
+/// - `immutable` for `IMMUTABLE` or [the `i` flag](https://man.archlinux.org/man/chattr.1#i)
+/// - `no-atime` for `NOATIME` or [the `A` flag](https://man.archlinux.org/man/chattr.1#A)
+/// - `no-backup` for `NODUMP` or [the `d` flag](https://man.archlinux.org/man/chattr.1#d)
+/// - `no-cow` for `NOCOW` or [the `C` flag](https://man.archlinux.org/man/chattr.1#C)
+/// - `not-compressed` for `NOCOMPR` or [the `m` flag](https://man.archlinux.org/man/chattr.1#m)
+///
 /// ## Windows
 ///
-/// Translates relevant `FILE_ATTRIBUTE_*` flags to booleans at string keys, prefixed by `win32.`:
-/// - `hidden` for `FILE_ATTRIBUTE_HIDDEN`
-/// - `system` for `FILE_ATTRIBUTE_SYSTEM`
+/// Translates present [`FILE_ATTRIBUTE_*`][win32-file-attrs] flags to boolean true at string keys,
+/// prefixed by `win32.`. Some flags are not translated; this list is exhaustive:
+///
 /// - `archive` for `FILE_ATTRIBUTE_ARCHIVE`
-/// - `temporary` for `FILE_ATTRIBUTE_TEMPORARY`
-/// - `sparse` for `FILE_ATTRIBUTE_SPARSE`
 /// - `compressed` for `FILE_ATTRIBUTE_COMPRESSED`
+/// - `encrypted` for `FILE_ATTRIBUTE_ENCRYPTED`
+/// - `hidden` for `FILE_ATTRIBUTE_HIDDEN`
 /// - `not-content-indexed` for `FILE_ATTRIBUTE_NOT_CONTENT_INDEXED` (opts the file out of content
 ///   indexing from Windows' crawlers, e.g. for the search functionality in Explorer and Start)
-/// - `encrypted` for `FILE_ATTRIBUTE_ENCRYPTED`
+/// - `sparse` for `FILE_ATTRIBUTE_SPARSE`
+/// - `system` for `FILE_ATTRIBUTE_SYSTEM`
+/// - `temporary` for `FILE_ATTRIBUTE_TEMPORARY`
+///
+/// [chattr]: https://man.archlinux.org/man/chattr.1
+/// [win32-file-attrs]: https://learn.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants
 #[instrument(level = "trace")]
-pub fn file_attributes(meta: &Metadata) -> Option<HashMap<String, AttributeValue>> {
+pub fn file_attributes(
+	path: &Path,
+	meta: &Metadata,
+) -> Result<Option<HashMap<String, AttributeValue>>> {
+	#[cfg(linux)]
+	{
+		use e2p_fileflags::{FileFlags, Flags};
+		let flags = path.flags()?;
+		Ok(Some(
+			[
+				("append-only", flags & FileFlags::APPEND != 0),
+				("casefold", flags & FileFlags::CASEFOLD != 0),
+				("compressed", flags & FileFlags::COMPR != 0),
+				("delete-undo", flags & FileFlags::UNRM != 0),
+				("delete-zero", flags & FileFlags::SECRM != 0),
+				("dir-sync", flags & FileFlags::DIRSYNC != 0),
+				("encrypted", flags & FileFlags::ENCRYPT != 0),
+				("file-sync", flags & FileFlags::SYNC != 0),
+				("immutable", flags & FileFlags::IMMUTABLE != 0),
+				("no-atime", flags & FileFlags::NOATIME != 0),
+				("no-backup", flags & FileFlags::NODUMP != 0),
+				("no-cow", flags & FileFlags::NOCOW != 0),
+				("not-compressed", flags & FileFlags::NOCOMPR != 0),
+			]
+			.into_iter()
+			.filter(|(_, v)| v)
+			.map(|(k, v)| (format!("linux.{k}"), AttributeValue::Boolean(true)))
+			.collect(),
+		))
+	}
+
 	#[cfg(windows)]
 	{
 		use std::os::windows::fs::MetadataExt;
@@ -170,37 +227,38 @@ pub fn file_attributes(meta: &Metadata) -> Option<HashMap<String, AttributeValue
 
 		let attrs = meta.file_attributes();
 
-		Some(
+		Ok(Some(
 			[
-				("hidden", attrs & FileSystem::FILE_ATTRIBUTE_HIDDEN != 0),
-				("system", attrs & FileSystem::FILE_ATTRIBUTE_SYSTEM != 0),
 				("archive", attrs & FileSystem::FILE_ATTRIBUTE_ARCHIVE != 0),
-				(
-					"temporary",
-					attrs & FileSystem::FILE_ATTRIBUTE_TEMPORARY != 0,
-				),
-				("sparse", attrs & FileSystem::FILE_ATTRIBUTE_SPARSE != 0),
 				(
 					"compressed",
 					attrs & FileSystem::FILE_ATTRIBUTE_COMPRESSED != 0,
 				),
 				(
-					"not-content-indexed",
-					attrs & FileSystem::FILE_ATTRIBUTE_NOT_CONTENT_INDEXED != 0,
-				),
-				(
 					"encrypted",
 					attrs & FileSystem::FILE_ATTRIBUTE_ENCRYPTED != 0,
 				),
+				("hidden", attrs & FileSystem::FILE_ATTRIBUTE_HIDDEN != 0),
+				(
+					"not-content-indexed",
+					attrs & FileSystem::FILE_ATTRIBUTE_NOT_CONTENT_INDEXED != 0,
+				),
+				("system", attrs & FileSystem::FILE_ATTRIBUTE_SYSTEM != 0),
+				("sparse", attrs & FileSystem::FILE_ATTRIBUTE_SPARSE != 0),
+				(
+					"temporary",
+					attrs & FileSystem::FILE_ATTRIBUTE_TEMPORARY != 0,
+				),
 			]
 			.into_iter()
-			.map(|(k, v)| (format!("win32.{k}"), AttributeValue::Boolean(v)))
+			.filter(|(_, v)| v)
+			.map(|(k, v)| (format!("win32.{k}"), AttributeValue::Boolean(true)))
 			.collect(),
-		)
+		))
 	}
 
-	#[cfg(not(windows))]
+	#[cfg(not(any(linux, windows)))]
 	{
-		None
+		Ok(None)
 	}
 }

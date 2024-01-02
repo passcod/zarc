@@ -6,10 +6,12 @@
 
 #![warn(clippy::unwrap_used, missing_docs)]
 #![deny(rust_2018_idioms)]
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
 pub mod decode;
 pub mod encode;
 pub mod format;
+#[cfg(feature = "metadata")]
 pub mod metadata;
 pub mod zstd;
 
