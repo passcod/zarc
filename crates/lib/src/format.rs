@@ -312,16 +312,26 @@ impl Pathname {
 #[derive(Clone, Debug, PartialEq)]
 pub enum CborString {
 	/// UTF-8 text string value.
-	String(String),
+	Text(String),
 
 	/// Non-unicode byte string value.
 	Binary(Vec<u8>),
 }
 
+impl CborString {
+	/// Convert from bytes that might be UTF-8.
+	pub fn from_maybe_utf8(bytes: Vec<u8>) -> Self {
+		match String::from_utf8(bytes) {
+			Ok(string) => Self::Text(string),
+			Err(err) => Self::Binary(err.into_bytes()),
+		}
+	}
+}
+
 impl From<&OsStr> for CborString {
 	fn from(string: &OsStr) -> Self {
 		if let Some(unicode) = string.to_str() {
-			Self::String(unicode.into())
+			Self::Text(unicode.into())
 		} else {
 			#[cfg(unix)]
 			{
@@ -338,13 +348,13 @@ impl From<&OsStr> for CborString {
 
 impl From<&str> for CborString {
 	fn from(string: &str) -> Self {
-		Self::String(string.into())
+		Self::Text(string.into())
 	}
 }
 
 impl From<String> for CborString {
 	fn from(string: String) -> Self {
-		Self::String(string)
+		Self::Text(string)
 	}
 }
 
@@ -355,7 +365,7 @@ impl<C> Encode<C> for CborString {
 		ctx: &mut C,
 	) -> Result<(), minicbor::encode::Error<W::Error>> {
 		match self {
-			Self::String(s) => s.encode(e, ctx),
+			Self::Text(s) => s.encode(e, ctx),
 			Self::Binary(b) => <&minicbor::bytes::ByteSlice>::from(b.as_slice()).encode(e, ctx),
 		}
 	}
@@ -364,8 +374,8 @@ impl<C> Encode<C> for CborString {
 impl<'b, C> Decode<'b, C> for CborString {
 	fn decode(d: &mut Decoder<'b>, _ctx: &mut C) -> Result<Self, minicbor::decode::Error> {
 		match d.datatype()? {
-			Type::String => d.str().map(|s| Self::String(s.into())),
-			Type::StringIndef => Ok(Self::String(d.str_iter()?.try_fold(
+			Type::String => d.str().map(|s| Self::Text(s.into())),
+			Type::StringIndef => Ok(Self::Text(d.str_iter()?.try_fold(
 				String::new(),
 				|mut string, s| {
 					s.map(|s| {

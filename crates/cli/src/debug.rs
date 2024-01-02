@@ -314,7 +314,7 @@ fn parse_frame<'input>(
 													"          {b:02x?} ({})",
 													String::from_utf8_lossy(&b)
 												),
-												CborString::String(t) => println!("          {t}"),
+												CborString::Text(t) => println!("          {t}"),
 											}
 										}
 									}
@@ -323,7 +323,7 @@ fn parse_frame<'input>(
 											"        target: {b:02x?} ({})",
 											String::from_utf8_lossy(&b)
 										),
-										CborString::String(t) => println!("        target: {t}"),
+										CborString::Text(t) => println!("        target: {t}"),
 									},
 									None => {}
 								}
@@ -338,7 +338,7 @@ fn parse_frame<'input>(
 								CborString::Binary(b) => {
 									println!("          {b:02x?} ({})", String::from_utf8_lossy(b))
 								}
-								CborString::String(t) => println!("          {t}"),
+								CborString::Text(t) => println!("          {t}"),
 							}
 						}
 
@@ -360,7 +360,7 @@ fn parse_frame<'input>(
 									CborString::Binary(b) => {
 										print!(" name={} ({b:02x?})", String::from_utf8_lossy(b))
 									}
-									CborString::String(t) => print!(" name={t}"),
+									CborString::Text(t) => print!(" name={t}"),
 								}
 							}
 							println!("");
@@ -376,7 +376,7 @@ fn parse_frame<'input>(
 									CborString::Binary(b) => {
 										print!(" name={} ({b:02x?})", String::from_utf8_lossy(b))
 									}
-									CborString::String(t) => print!(" name={t}"),
+									CborString::Text(t) => print!(" name={t}"),
 								}
 							}
 							println!("");

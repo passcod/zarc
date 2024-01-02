@@ -2,7 +2,7 @@
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
 	<assemblyIdentity
 		type="win32"
-		name="Super.Cli.super"
+		name="Zarc.Cli.zarc"
 		version="0.1.0.0"
 	/>
 

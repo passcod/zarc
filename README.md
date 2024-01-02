@@ -211,10 +211,14 @@ On Windows a path looks like `crates\\cli\\src\\pack.rs` and on Unix a path look
 Instead of performing path translation, Zarc stores them as an array of components: `["crates", "cli", "src", "pack.rs"]`, so they get interpreted precisely and exactly the same on all platforms.
 Of course, some paths aren't Unicode, and Zarc recognises that and stores non-UTF-8 components marked as bytestringsinstead of text.
 
+### Attribute support
+
+File and directory (and symlink etc) attributes and extended attributes are stored and restored as possible.
+You'd think this wouldn't be a feature but hooo boy are many other formats inconsistent on this.
+
 ### User metadata
 
-Zarc already stores file attributes and extended attributes, and even stores directory and link metadata.
-But if you want to store custom metadata, it has dedicated support too:
+If you want to store custom metadata, there's dedicated support:
 
 #### At the archive level
 
@@ -378,21 +382,29 @@ $ dust -sbn0 node_modules.zarc
   - [x] `--level` to set compression level
   - [x] `--zstd` to set Zstd parameters
   - [x] Pack linux attributes
-  - [ ] Pack linux xattrs
+  - [x] Pack linux xattrs
+  - [ ] Pack linux ACLS
+  - [ ] Pack SELinux attributes
   - [ ] Pack mac attributes
-  - [ ] Pack mac xattrs
+  - [x] Pack mac xattrs
   - [x] Pack windows attributes
   - [ ] Pack windows alternate data stream extended attributes
+  - [ ] Override user/group
+  - [ ] User/group mappings
 - [x] `zarc debug`
 - [ ] `zarc unpack`
   - [ ] `--key` to check public key matches
   - [ ] `--attest` and `--attest-file` to check external signature
   - [ ] Unpack linux attributes
   - [ ] Unpack linux xattrs
+  - [ ] Unpack linux ACLS
+  - [ ] Unpack SELinux attributes
   - [ ] Unpack mac attributes
   - [ ] Unpack mac xattrs
   - [ ] Unpack windows attributes
   - [ ] Unpack windows alternate data stream extended attributes
+  - [ ] Override user/group
+  - [ ] User/group mappings
 - [ ] `zarc list-files`
 - [ ] Streaming packing
 - [ ] Streaming unpacking

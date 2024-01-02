@@ -8,11 +8,11 @@ use std::{
 	time::SystemTime,
 };
 
-use tracing::{instrument, trace};
+use tracing::{error, instrument, trace};
 
 use crate::format::{
-	AttributeValue, Digest, FilemapEntry, Pathname, PosixOwner, SpecialFile, SpecialFileKind,
-	Timestamps,
+	AttributeValue, CborString, Digest, FilemapEntry, Pathname, PosixOwner, SpecialFile,
+	SpecialFileKind, Timestamps,
 };
 
 /// Build a [`FilemapEntry`] from a filename.
@@ -75,7 +75,7 @@ pub fn build_filemap(
 		},
 		timestamps: Some(timestamps(&meta)),
 		attributes: file_attributes(path, &meta)?,
-		extended_attributes: None,
+		extended_attributes: file_extended_attributes(path)?,
 		user_metadata: None,
 	})
 }
@@ -193,29 +193,29 @@ pub fn file_attributes(
 	path: &Path,
 	meta: &Metadata,
 ) -> Result<Option<HashMap<String, AttributeValue>>> {
-	#[cfg(linux)]
+	#[cfg(target_os = "linux")]
 	{
 		use e2p_fileflags::{FileFlags, Flags};
 		let flags = path.flags()?;
 		Ok(Some(
 			[
-				("append-only", flags & FileFlags::APPEND != 0),
-				("casefold", flags & FileFlags::CASEFOLD != 0),
-				("compressed", flags & FileFlags::COMPR != 0),
-				("delete-undo", flags & FileFlags::UNRM != 0),
-				("delete-zero", flags & FileFlags::SECRM != 0),
-				("dir-sync", flags & FileFlags::DIRSYNC != 0),
-				("encrypted", flags & FileFlags::ENCRYPT != 0),
-				("file-sync", flags & FileFlags::SYNC != 0),
-				("immutable", flags & FileFlags::IMMUTABLE != 0),
-				("no-atime", flags & FileFlags::NOATIME != 0),
-				("no-backup", flags & FileFlags::NODUMP != 0),
-				("no-cow", flags & FileFlags::NOCOW != 0),
-				("not-compressed", flags & FileFlags::NOCOMPR != 0),
+				("append-only", flags.contains(Flags::APPEND)),
+				("casefold", flags.contains(Flags::CASEFOLD)),
+				("compressed", flags.contains(Flags::COMPR)),
+				("delete-undo", flags.contains(Flags::UNRM)),
+				("delete-zero", flags.contains(Flags::SECRM)),
+				("dir-sync", flags.contains(Flags::DIRSYNC)),
+				("encrypted", flags.contains(Flags::ENCRYPT)),
+				("file-sync", flags.contains(Flags::SYNC)),
+				("immutable", flags.contains(Flags::IMMUTABLE)),
+				("no-atime", flags.contains(Flags::NOATIME)),
+				("no-backup", flags.contains(Flags::NODUMP)),
+				("no-cow", flags.contains(Flags::NOCOW)),
+				("not-compressed", flags.contains(Flags::NOCOMPR)),
 			]
 			.into_iter()
-			.filter(|(_, v)| v)
-			.map(|(k, v)| (format!("linux.{k}"), AttributeValue::Boolean(true)))
+			.filter(|(_, v)| *v)
+			.map(|(k, _)| (format!("linux.{k}"), AttributeValue::Boolean(true)))
 			.collect(),
 		))
 	}
@@ -251,14 +251,48 @@ pub fn file_attributes(
 				),
 			]
 			.into_iter()
-			.filter(|(_, v)| v)
-			.map(|(k, v)| (format!("win32.{k}"), AttributeValue::Boolean(true)))
+			.filter(|(_, v)| *v)
+			.map(|(k, _)| (format!("win32.{k}"), AttributeValue::Boolean(true)))
 			.collect(),
 		))
 	}
 
-	#[cfg(not(any(linux, windows)))]
+	#[cfg(not(any(target_os = "linux", windows)))]
 	{
+		Ok(None)
+	}
+}
+
+/// Get attributes for a file, given its path.
+///
+/// Returns `Ok(None)` on unsupported systems.
+///
+/// Supported:
+/// - Android
+/// - FreeBSD
+/// - Linux
+/// - MacOS
+/// - NetBSD
+///
+#[instrument(level = "trace")]
+pub fn file_extended_attributes(path: &Path) -> Result<Option<HashMap<String, AttributeValue>>> {
+	if xattr::SUPPORTED_PLATFORM {
+		let list = xattr::list(path)?;
+		let size_hint = list.size_hint();
+		let mut map = HashMap::with_capacity(size_hint.1.unwrap_or(size_hint.0));
+		for osname in list {
+			match osname.to_str() {
+				None => error!(?osname, ?path, "not storing non-Unicode xattr"),
+				Some(name) => {
+					if let Some(value) = xattr::get(path, &osname)? {
+						map.insert(name.to_string(), CborString::from_maybe_utf8(value).into());
+					}
+				}
+			}
+		}
+
+		Ok(Some(map))
+	} else {
 		Ok(None)
 	}
 }

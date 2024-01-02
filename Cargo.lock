@@ -2541,6 +2541,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "xattr"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "914566e6413e7fa959cc394fb30e563ba80f3541fbd40816d4c05a0fc3f2a0f1"
+dependencies = [
+ "libc",
+ "linux-raw-sys",
+ "rustix",
+]
+
+[[package]]
 name = "zarc"
 version = "0.0.1"
 dependencies = [
@@ -2553,6 +2564,7 @@ dependencies = [
  "rand_core",
  "tracing",
  "windows 0.52.0",
+ "xattr",
  "zstd",
  "zstd-safe",
 ]

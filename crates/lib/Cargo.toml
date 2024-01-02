@@ -21,10 +21,11 @@ log = "0.4.20"
 minicbor = { version = "0.20.0", features = ["derive", "std"] }
 rand_core = "0.6.4"
 tracing = "0.1.40"
+xattr = "1.2.0"
 zstd = "0.13.0"
 zstd-safe = { version = "7.0.0", features = ["std"] }
 
-[target.'cfg(linux)'.dependencies]
+[target.'cfg(target_os="linux")'.dependencies]
 e2p-fileflags = { version = "0.1.0", optional = true }
 
 [target.'cfg(windows)'.dependencies]
