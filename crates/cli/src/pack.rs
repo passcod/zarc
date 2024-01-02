@@ -240,6 +240,7 @@ pub(crate) fn pack(args: PackArgs) -> std::io::Result<()> {
 	}
 
 	if args.store {
+		debug!("disable compression for content");
 		zarc.enable_compression(false);
 	}
 
