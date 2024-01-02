@@ -250,9 +250,8 @@ If new content duplicates the existing, it won't store new copies.
 If new files are added that have the same path as existing ones, both the new and old metadata are kept.
 By default, Zarc will unpack the last version of a path, but you can change that.
 
-Zarc stores the insertion date of files, so you can tell whether and when a file was appended.
-
-Appending to a Zarc regenerates the keypair and re-signs every checksum, so the new archive can't be confused for the old.
+Appending to a Zarc generates a new keypair and keeps metadata about the prior versions for provenance.
+Zarc stores the insertion date of files and the creation date of the archive itself as well as all prior versions, so you can tell whether a file was appended and when it was created or modified.
 
 ### Limitations
 

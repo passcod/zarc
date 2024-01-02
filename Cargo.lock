@@ -2567,6 +2567,7 @@ name = "zarc"
 version = "0.0.1"
 dependencies = [
  "blake3",
+ "chrono",
  "deku",
  "e2p-fileflags",
  "ed25519-dalek",

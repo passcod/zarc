@@ -16,6 +16,8 @@ Zarc is intended to be fairly simple to parse given a zstd decoder, while provid
 - appending files is reasonably cheap;
 - capable of handling archives larger than memory, or even archives containing more file metadata than would fit in memory (allowed by spec but not yet implemented).
 
+**CAUTION:** the format is currently unstable and changes without version bump or notice.
+
 ## Known issues / limitations
 
 - There's an uncompressed overhead per unique file, so if you have a lot of small files, it can be less efficient compared to tar+zstd which may squash the per-file overhead as well as the file content.
@@ -184,7 +186,64 @@ _Byte string._ **Mandatory.**
 
 Public key for the selected signature scheme.
 
-### `4`: Filemap
+#### `4`: Written At
+
+_Timestamp or DateTime._ **Mandatory.**
+
+When this archive was created.
+
+### `10`: User Metadata
+
+_Map(text string, boolean or text or byte string)._ **Optional.**
+
+Arbitrary user-provided metadata for the whole Zarc file.
+
+### `13`: Prior Versions
+
+_Array._ **Optional.**
+
+If this archive was appended to, this contains metadata for the previous versions of the directory.
+Entries are in reverse-chronological order, with the most recent prior version first.
+
+A maximum of 65536 prior versions can be stored, though for practical purposes implementations SHOULD restrict this to a much lower number when packing.
+
+#### `0`: Zarc Directory Version
+
+_Integer._ **Optional.**
+
+Version of the directory if the current version is different from this one.
+
+#### `1`: Hash Algorithm
+
+_Integer._ **Mandatory.**
+
+Hash algorithm (see above for list) of this version.
+
+#### `2`: Signature Algorithm
+
+_Integer._ **Mandatory.**
+
+Signature algorithm (see above for list) of this version.
+
+#### `3`: Signature Public Key
+
+_Byte string._ **Mandatory.**
+
+Public key of this version.
+
+#### `4`: Written At
+
+_Timestamp or DateTime._ **Mandatory.**
+
+When this version was created.
+
+#### `10`: User Metadata
+
+_Map(text string, boolean or text or byte string)._ **Optional.**
+
+User metadata of this version.
+
+### `20`: Filemap
 
 _Array of maps._ **Mandatory.**
 
@@ -301,6 +360,12 @@ Zarc imposes no restriction on the format of attribute names, nor on the content
 Implementations MAY ignore extended attributes if obtaining or setting them is impossible or impractical.
 On Linux, implementations MAY assume a `user` namespace for unprefixed keys.
 
+#### `13`: Version Added
+
+_Integer._ **Optional.**
+
+If this file entry was added by another version than current, this is the index of that version.
+
 #### `20`: File Timestamps
 
 _Map(unsigned integer, timestamp)._ **Optional.**
@@ -350,7 +415,7 @@ Pathnames (as the conditional second array item) are either:
 
 The second form is preferred, for portability.
 
-### `5`: Framelist
+### `21`: Framelist
 
 _Array of maps._ **Mandatory.**
 
@@ -388,11 +453,11 @@ The length of the uncompressed content of the frame in bytes.
 
 Implementations MAY use this to avoid unpacking frames which exceed available memory or storage.
 
-### `10`: User Metadata
+#### `13`: Version Added
 
-_Map(text string, boolean or text or byte string)._ **Optional.**
+_Integer._ **Optional.**
 
-Arbitrary user-provided metadata for the whole Zarc file.
+If this frame was added by another version than current, this is the index of that version.
 
 ## Zarc EOF Trailer
 
@@ -444,9 +509,12 @@ Zarc is designed so that more content may be appended without rebuilding the ent
 
 1. Read original Zarc Directory (and Header)
 2. Create a new keypair
-3. Insert data frames as needed
-4. Recompute all signatures
-5. Insert **Framelist** entries as needed
-6. Insert **Filemap** entries as needed
-7. Write new directory and trailer
+3. Insert new **Prior Version** entry
+4. Change all existing frames and filemaps to reference the old version
+5. Insert new data frames as needed
+6. Insert new **Framelist** entries as needed
+7. Insert new **Filemap** entries as needed
+8. On option, and if the hash algorithm has changed, recompute all hashes.
+9. Recompute all signatures
+10. Write new directory and trailer
 

@@ -5,14 +5,13 @@ use std::{
 	fs::{self, Metadata},
 	io::Result,
 	path::Path,
-	time::SystemTime,
 };
 
 use tracing::{error, instrument, trace};
 
 use crate::format::{
 	AttributeValue, CborString, Digest, FilemapEntry, Pathname, PosixOwner, SpecialFile,
-	SpecialFileKind, Timestamps,
+	SpecialFileKind, Timestamp, Timestamps,
 };
 
 /// Build a [`FilemapEntry`] from a filename.
@@ -77,6 +76,7 @@ pub fn build_filemap(
 		attributes: file_attributes(path, &meta)?,
 		extended_attributes: file_extended_attributes(path)?,
 		user_metadata: None,
+		version_added: None,
 	})
 }
 
@@ -84,10 +84,10 @@ pub fn build_filemap(
 #[instrument(level = "trace")]
 pub fn timestamps(meta: &Metadata) -> Timestamps {
 	Timestamps {
-		inserted: Some(SystemTime::now()),
-		created: meta.created().ok(),
-		modified: meta.modified().ok(),
-		accessed: meta.accessed().ok(),
+		inserted: Some(Timestamp::now()),
+		created: meta.created().map(Timestamp::from).ok(),
+		modified: meta.modified().map(Timestamp::from).ok(),
+		accessed: meta.accessed().map(Timestamp::from).ok(),
 	}
 }
 

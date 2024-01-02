@@ -7,8 +7,12 @@ use std::{
 	time::SystemTime,
 };
 
+use chrono::{DateTime, Utc};
 use deku::prelude::*;
-use minicbor::{data::Type, Decode, Decoder, Encode, Encoder};
+use minicbor::{
+	data::{Tag, Type},
+	Decode, Decoder, Encode, Encoder,
+};
 
 /// Magic bytes
 pub const ZARC_MAGIC: [u8; 3] = [0x65, 0xAA, 0xDC];
@@ -143,23 +147,64 @@ pub struct ZarcDirectory {
 	#[n(3)]
 	pub public_key: PublicKey,
 
-	/// Filemap.
-	///
-	/// List of files, their pathname, their metadata, and which frame of content they point to.
+	/// Archive creation date.
 	#[n(4)]
-	pub filemap: Vec<FilemapEntry>,
-
-	/// Framelist.
-	///
-	/// List of frames, their digest, signature, and offset in the file.
-	#[n(5)]
-	pub framelist: Vec<FrameEntry>,
+	pub written_at: Timestamp,
 
 	/// User Metadata.
 	///
 	/// You can write a Some(empty HashMap), but you'll save two bytes if you write a None
 	/// instead. This is pretty cheap here, but adds up for the similar fields in
 	/// [`filemap`](FilemapEntry).
+	#[n(10)]
+	pub user_metadata: Option<HashMap<String, AttributeValue>>,
+
+	/// Prior versions.
+	///
+	/// When a file is appended to, metadata about the previous version (and so on) is kept around.
+	#[n(13)]
+	pub prior_versions: Option<Vec<Version>>,
+
+	/// Filemap.
+	///
+	/// List of files, their pathname, their metadata, and which frame of content they point to.
+	#[n(20)]
+	pub filemap: Vec<FilemapEntry>,
+
+	/// Framelist.
+	///
+	/// List of frames, their digest, signature, and offset in the file.
+	#[n(21)]
+	pub framelist: Vec<FrameEntry>,
+}
+
+/// Metadata about a (previous) version of the Zarc Directory
+///
+/// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#13-prior-versions)
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+#[cbor(map)]
+pub struct Version {
+	/// Directory format version at that version.
+	#[n(0)]
+	pub version: u8,
+
+	/// Digest (hash) algorithm at that version.
+	#[n(1)]
+	pub hash_algorithm: HashAlgorithm,
+
+	/// Signature scheme at that version.
+	#[n(2)]
+	pub signature_scheme: SignatureScheme,
+
+	/// Public key of that version.
+	#[n(3)]
+	pub public_key: PublicKey,
+
+	/// Version creation date.
+	#[n(4)]
+	pub written_at: Timestamp,
+
+	/// User Metadata of that version.
 	#[n(10)]
 	pub user_metadata: Option<HashMap<String, AttributeValue>>,
 }
@@ -271,6 +316,10 @@ pub struct FilemapEntry {
 	/// Extended attributes.
 	#[n(12)]
 	pub extended_attributes: Option<HashMap<String, AttributeValue>>,
+
+	/// Version this entry was added in.
+	#[n(13)]
+	pub version_added: Option<u16>,
 
 	/// Timestamps.
 	#[n(20)]
@@ -525,19 +574,114 @@ impl<'b, C> Decode<'b, C> for PosixOwner {
 pub struct Timestamps {
 	/// Insertion time (time added to Zarc).
 	#[n(0)]
-	pub inserted: Option<SystemTime>,
+	pub inserted: Option<Timestamp>,
 
 	/// Creation time (ctime).
 	#[n(1)]
-	pub created: Option<SystemTime>,
+	pub created: Option<Timestamp>,
 
 	/// Modification time (mtime).
 	#[n(2)]
-	pub modified: Option<SystemTime>,
+	pub modified: Option<Timestamp>,
 
 	/// Access time (atime).
 	#[n(3)]
-	pub accessed: Option<SystemTime>,
+	pub accessed: Option<Timestamp>,
+}
+
+/// A timestamp.
+///
+/// Internally this is a [`chrono`] type, and always encodes to an RFC3339 tagged text string.
+/// However for flexibility it can decode from a CBOR epoch-based timestamp as well.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Timestamp(pub DateTime<Utc>);
+
+impl Timestamp {
+	/// The current date and time.
+	pub fn now() -> Self {
+		Self(Utc::now())
+	}
+}
+
+impl From<SystemTime> for Timestamp {
+	fn from(st: SystemTime) -> Self {
+		Self(st.into())
+	}
+}
+
+impl From<Timestamp> for SystemTime {
+	fn from(ts: Timestamp) -> Self {
+		ts.0.into()
+	}
+}
+
+impl From<DateTime<Utc>> for Timestamp {
+	fn from(dt: DateTime<Utc>) -> Self {
+		Self(dt)
+	}
+}
+
+impl From<Timestamp> for DateTime<Utc> {
+	fn from(ts: Timestamp) -> Self {
+		ts.0
+	}
+}
+
+impl<C> Encode<C> for Timestamp {
+	fn encode<W: minicbor::encode::write::Write>(
+		&self,
+		e: &mut Encoder<W>,
+		_ctx: &mut C,
+	) -> Result<(), minicbor::encode::Error<W::Error>> {
+		e.tag(Tag::DateTime)?.str(&self.0.to_rfc3339()).map(drop)
+	}
+}
+
+impl<'b, C> Decode<'b, C> for Timestamp {
+	fn decode(d: &mut Decoder<'b>, _ctx: &mut C) -> Result<Self, minicbor::decode::Error> {
+		let p = d.position();
+		match d.tag()? {
+			Tag::DateTime => Ok(Self(
+				DateTime::parse_from_rfc3339(d.str()?)
+					.map_err(|err| minicbor::decode::Error::message(err.to_string()).at(p))?
+					.into(),
+			)),
+			Tag::Timestamp => match d.datatype()? {
+				Type::U32 => DateTime::<Utc>::from_timestamp(i64::from(d.u32()?), 0),
+				Type::U64 => DateTime::<Utc>::from_timestamp(
+					i64::try_from(d.u64()?).map_err(|err| {
+						minicbor::decode::Error::message(format!("timestamp out of range: {err}"))
+							.at(p)
+					})?,
+					0,
+				),
+				Type::I32 => DateTime::<Utc>::from_timestamp(i64::from(d.i32()?), 0),
+				Type::I64 => DateTime::<Utc>::from_timestamp(d.i64()?, 0),
+				Type::Int => DateTime::<Utc>::from_timestamp(
+					i64::try_from(d.int()?).map_err(|err| {
+						minicbor::decode::Error::message(format!("timestamp out of range: {err}"))
+							.at(p)
+					})?,
+					0,
+				),
+				Type::F32 => {
+					let f = d.f32()?;
+					DateTime::<Utc>::from_timestamp(f.trunc() as _, (f.fract() * 1.0e9) as _)
+				}
+				Type::F64 => {
+					let f = d.f64()?;
+					DateTime::<Utc>::from_timestamp(f.trunc() as _, (f.fract() * 1.0e9) as _)
+				}
+				ty => return Err(minicbor::decode::Error::type_mismatch(ty)),
+			}
+			.ok_or_else(|| minicbor::decode::Error::message("timestamp out of range").at(p))
+			.map(Self),
+			other => Err(minicbor::decode::Error::message(format!(
+				"expected Timestamp or DateTime tag, got {other:?}"
+			))
+			.at(p)),
+		}
+	}
 }
 
 /// Special File metadata.
@@ -682,4 +826,8 @@ pub struct FrameEntry {
 	/// Uncompressed content size in bytes.
 	#[n(3)]
 	pub uncompressed_size: u64,
+
+	/// Version this entry was added in.
+	#[n(13)]
+	pub version_added: Option<u16>,
 }

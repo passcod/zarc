@@ -12,7 +12,8 @@ pub use zstd_safe::{CParameter as ZstdParameter, Strategy as ZstdStrategy};
 
 use crate::format::{
 	Digest, FilemapEntry, FrameEntry, HashAlgorithm, PublicKey, Signature, SignatureScheme,
-	ZarcDirectory, ZarcDirectoryHeader, ZarcEofTrailer, FILE_MAGIC, ZARC_DIRECTORY_VERSION,
+	Timestamp, ZarcDirectory, ZarcDirectoryHeader, ZarcEofTrailer, FILE_MAGIC,
+	ZARC_DIRECTORY_VERSION,
 };
 use crate::map_zstd_error;
 use crate::zstd::parser as zstd_parser;
@@ -294,6 +295,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 				offset: offset.try_into().map_err(|err| Error::other(err))?,
 				frame_hash: digest.clone(),
 				signature,
+				version_added: None,
 				uncompressed_size: uncompressed_size
 					.try_into()
 					.map_err(|err| Error::other(err))?,
@@ -335,9 +337,11 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 			hash_algorithm: HashAlgorithm::Blake3,
 			signature_scheme: SignatureScheme::Ed25519,
 			public_key: public_key.clone(),
+			written_at: Timestamp::now(),
+			user_metadata: Default::default(),
+			prior_versions: None,
 			filemap: std::mem::take(&mut self.filemap),
 			framelist,
-			user_metadata: Default::default(),
 		};
 		tracing::trace!(?directory, "built directory");
 
