@@ -196,7 +196,7 @@ Arbitrary user-provided metadata for the whole Zarc file.
 
 ### `13`: Prior Versions
 
-_Array._ **Optional.**
+_Array of maps._ **Optional.**
 
 If this archive was appended to, this contains metadata for the previous versions of the directory.
 Entries are in reverse-chronological order, with the most recent prior version first.
@@ -415,6 +415,8 @@ The second form is preferred, for portability.
 
 _Array of maps._ **Mandatory.**
 
+Items MUST appear in offset order.
+
 Each item contains:
 
 #### `0`: Frame Offset
@@ -441,13 +443,18 @@ A signature computed over the Frame Content Hash using the algorithm defined at 
 
 Implementations MUST check that the signature is valid (unless "insecure" mode is used).
 
-#### `3`: Uncompressed Byte Length
+#### `3`: Uncompressed Content Length
 
 _Integer._ **Mandatory.**
 
 The length of the uncompressed content of the frame in bytes.
 
-Implementations MAY use this to avoid unpacking frames which exceed available memory or storage.
+This is a complement to the Frame Content Size field available on the Zstandard Frame directly, as that field can be absent depending on zstd parameters.
+
+This can be used to e.g.:
+- avoid unpacking frames which exceed available memory or storage;
+- to preallocate storage before unpacking;
+- estimate the uncompressed total size of the archive.
 
 #### `13`: Version Added
 
