@@ -7,17 +7,15 @@ use blake3::Hash;
 use clap::{Parser, ValueHint};
 use deku::DekuContainerRead;
 use ed25519_dalek::{Signature, VerifyingKey};
+use ozarc::framing::{
+	SkippableFrame, ZstandardBlock, ZstandardBlockHeader, ZstandardBlockType, ZstandardFrame,
+	SKIPPABLE_FRAME_MAGIC, ZSTANDARD_FRAME_MAGIC,
+};
 use tracing::error;
 use umask::Mode;
-use zarc::{
-	format::{
-		CborString, LinkTarget, PosixOwner, ZarcDirectory, ZarcDirectoryHeader, ZarcEofTrailer,
-		ZarcHeader,
-	},
-	zstd::parser::{
-		SkippableFrame, ZstandardBlock, ZstandardBlockHeader, ZstandardBlockType, ZstandardFrame,
-		SKIPPABLE_FRAME_MAGIC, ZSTANDARD_FRAME_MAGIC,
-	},
+use zarc::format::{
+	CborString, LinkTarget, PosixOwner, ZarcDirectory, ZarcDirectoryHeader, ZarcEofTrailer,
+	ZarcHeader,
 };
 use zstd_safe::DCtx;
 

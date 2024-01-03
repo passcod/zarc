@@ -16,7 +16,6 @@ use crate::format::{
 	ZARC_DIRECTORY_VERSION,
 };
 use crate::map_zstd_error;
-use crate::zstd::parser as zstd_parser;
 
 /// Zarc encoder context.
 pub struct Encoder<'writer, W: Write> {
@@ -79,7 +78,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 				buffer = %buf.capacity(),
 				"reparse frame"
 			);
-			let ((rest, _), mut frame) = zstd_parser::ZstandardFrame::from_bytes((&buf, 0))?;
+			let ((rest, _), mut frame) = ozarc::framing::ZstandardFrame::from_bytes((&buf, 0))?;
 			tracing::trace!(
 				?frame,
 				rest = %format!("{rest:02x?}"),
@@ -91,9 +90,9 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 			use crate::format::{ZARC_FILE_VERSION, ZARC_MAGIC};
 			frame.blocks.insert(
 				0,
-				zstd_parser::ZstandardBlock {
-					header: zstd_parser::ZstandardBlockHeader::new(
-						zstd_parser::ZstandardBlockType::Raw,
+				ozarc::framing::ZstandardBlock {
+					header: ozarc::framing::ZstandardBlockHeader::new(
+						ozarc::framing::ZstandardBlockType::Raw,
 						false,
 						4,
 					),
@@ -108,9 +107,9 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 			// write zero-length null-byte RLE in position 1
 			frame.blocks.insert(
 				1,
-				zstd_parser::ZstandardBlock {
-					header: zstd_parser::ZstandardBlockHeader::new(
-						zstd_parser::ZstandardBlockType::Rle,
+				ozarc::framing::ZstandardBlock {
+					header: ozarc::framing::ZstandardBlockHeader::new(
+						ozarc::framing::ZstandardBlockType::Rle,
 						false,
 						0,
 					),
@@ -195,7 +194,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 	// zstd can't write fully-uncompressed data, so we use our own
 	// deku types to write raw blocks and the frame directly
 	fn write_uncompressed_frame(&mut self, data: &[u8]) -> Result<usize> {
-		use crate::zstd::parser::*;
+		use ozarc::framing::*;
 		let mut frame = ZstandardFrame {
 			frame_descriptor: ZstandardFrameDescriptor {
 				fcs_size: 3,
@@ -237,7 +236,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 			magic,
 			"compose data into frame"
 		);
-		let frame = zstd_parser::SkippableFrame::new(magic, data);
+		let frame = ozarc::framing::SkippableFrame::new(magic, data);
 		let buffer = frame.to_bytes()?;
 
 		tracing::trace!(

@@ -13,7 +13,6 @@ pub mod encode;
 pub mod format;
 #[cfg(feature = "metadata")]
 pub mod metadata;
-pub mod zstd;
 
 pub(crate) fn map_zstd_error(code: usize) -> std::io::Error {
 	let msg = zstd_safe::get_error_name(code);

@@ -1,8 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
-	"crates/lib",
-	"crates/cli",
+	"crates/ozarc",
+	"crates/zarc",
+	"crates/zarc-cli",
 ]
 
 [profile.release]

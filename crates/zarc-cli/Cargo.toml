@@ -25,12 +25,13 @@ clap = { version = "4.4.11", features = ["derive", "cargo", "wrap_help", "string
 deku = { version = "0.16.0", features = ["logging"], git = "https://github.com/sharksforarms/deku" }
 ed25519-dalek = "2.1.0"
 minicbor = { version = "0.20.0", features = ["std"] }
+ozarc = { version = "0.0.1", path = "../ozarc" }
 rand = "0.8.5"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
 umask = "2.1.0"
 walkdir = "2.4.0"
-zarc = { version = "0.0.1", path = "../lib" }
+zarc = { version = "0.0.1", path = "../zarc" }
 zstd-safe = { version = "7.0.0", features = ["experimental"] }
 
 [build-dependencies]

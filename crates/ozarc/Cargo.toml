@@ -1,0 +1,20 @@
+[package]
+name = "ozarc"
+version = "0.0.1"
+edition = "2021"
+
+authors = ["Félix Saparelli <felix@passcod.name>"]
+license = "Apache-2.0 OR MIT"
+description = "Zstandard implementation in pure Rust"
+keywords = ["archive", "file-format", "zstd"]
+categories = ["encoding", "compression"]
+
+documentation = "https://github.com/passcod/zarc"
+repository = "https://github.com/passcod/zarc"
+readme = "README.md"
+
+[dependencies]
+deku = { version = "0.16.0", features = ["logging"], git = "https://github.com/sharksforarms/deku" }
+log = "0.4.20"
+tracing = "0.1.40"
+
