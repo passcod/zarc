@@ -1,6 +1,6 @@
 //! Zstd file format parsing types.
 //!
-//! [Spec](https://github.com/facebook/zstd/blob/7cf62bc274105f5332bf2d28c57cb6e5669da4d8/doc/zstd_compression_format.md)
+//! [Spec (Informational RFC8878)](https://datatracker.ietf.org/doc/html/rfc8878)
 //!
 //! Here's a quick recap of the zstd format, full specification available at link above:
 //!
@@ -40,7 +40,7 @@ pub const ZSTANDARD_FRAME_MAGIC: &'static [u8] = b"\x28\xB5\x2F\xFD";
 
 /// A "Skippable" frame.
 ///
-/// [Spec](https://github.com/facebook/zstd/blob/7cf62bc274105f5332bf2d28c57cb6e5669da4d8/doc/zstd_compression_format.md#skippable-frames)
+/// [Spec](https://datatracker.ietf.org/doc/html/rfc8878#name-skippable-frames)
 #[derive(Clone, Debug, Eq, PartialEq, DekuRead, DekuWrite)]
 #[deku(endian = "little")]
 pub struct SkippableFrame {
@@ -82,26 +82,26 @@ impl SkippableFrame {
 
 /// A Zstandard Frame.
 ///
-/// [Spec](https://github.com/facebook/zstd/blob/7cf62bc274105f5332bf2d28c57cb6e5669da4d8/doc/zstd_compression_format.md#zstandard-frames)
+/// [Spec](https://datatracker.ietf.org/doc/html/rfc8878#name-zstandard-frames)
 #[derive(Clone, Debug, Eq, PartialEq, DekuRead, DekuWrite)]
 #[deku(endian = "little", magic = b"\x28\xB5\x2F\xFD")]
 pub struct ZstandardFrame {
 	/// The frame descriptor.
 	///
-	/// [Spec](https://github.com/facebook/zstd/blob/7cf62bc274105f5332bf2d28c57cb6e5669da4d8/doc/zstd_compression_format.md#frame_header_descriptor)
+	/// [Spec](https://datatracker.ietf.org/doc/html/rfc8878#section-3.1.1.1.1)
 	///
 	/// Describes what other fields are present in the frame header.
 	pub frame_descriptor: ZstandardFrameDescriptor,
 
 	/// Minimum memory needed to decode the frame.
 	///
-	/// [Spec](https://github.com/facebook/zstd/blob/7cf62bc274105f5332bf2d28c57cb6e5669da4d8/doc/zstd_compression_format.md#window_descriptor)
+	/// [Spec](https://datatracker.ietf.org/doc/html/rfc8878#name-window-descriptor)
 	#[deku(bytes = 1, cond = "!frame_descriptor.single_segment")]
 	pub window_descriptor: Option<u8>,
 
 	/// Dictionary ID.
 	///
-	/// [Spec](https://github.com/facebook/zstd/blob/7cf62bc274105f5332bf2d28c57cb6e5669da4d8/doc/zstd_compression_format.md#dictionary_id)
+	/// [Spec](https://datatracker.ietf.org/doc/html/rfc8878#section-3.1.1.1.3)
 	///
 	/// See [`ZstandardFrame::dictionary_id()`] for the value as an integer.
 	#[deku(count = "frame_descriptor.did_length()")]
@@ -109,7 +109,9 @@ pub struct ZstandardFrame {
 
 	/// Original (uncompressed) size.
 	///
-	/// [Spec](https://github.com/facebook/zstd/blob/7cf62bc274105f5332bf2d28c57cb6e5669da4d8/doc/zstd_compression_format.md#frame_content_size)
+	/// [Spec](https://datatracker.ietf.org/doc/html/rfc8878#name-frame_content_size)
+	///
+	/// This field is optional.
 	///
 	/// This needs to be interpreted before it can be used. See [`ZstandardFrame::size()`].
 	#[deku(count = "frame_descriptor.fcs_length()")]
@@ -238,7 +240,7 @@ impl ZstandardFrameDescriptor {
 
 /// A Zstandard block.
 ///
-/// [Spec](https://github.com/facebook/zstd/blob/7cf62bc274105f5332bf2d28c57cb6e5669da4d8/doc/zstd_compression_format.md#blocks)
+/// [Spec](https://datatracker.ietf.org/doc/html/rfc8878#name-blocks)
 #[derive(Clone, Debug, Eq, PartialEq, DekuRead, DekuWrite)]
 #[deku(endian = "endian", ctx = "endian: deku::ctx::Endian")]
 pub struct ZstandardBlock {
@@ -252,7 +254,7 @@ pub struct ZstandardBlock {
 
 /// The header for a Zstandard block.
 ///
-/// [Spec](https://github.com/facebook/zstd/blob/7cf62bc274105f5332bf2d28c57cb6e5669da4d8/doc/zstd_compression_format.md#blocks)
+/// [Spec](https://datatracker.ietf.org/doc/html/rfc8878#name-blocks)
 #[derive(Clone, Debug, Eq, PartialEq, DekuRead, DekuWrite)]
 #[deku(endian = "endian", ctx = "endian: deku::ctx::Endian")]
 pub struct ZstandardBlockHeader {
@@ -328,6 +330,8 @@ impl ZstandardBlockHeader {
 }
 
 /// The type of a Zstandard block.
+///
+/// [Spec](https://datatracker.ietf.org/doc/html/rfc8878#name-block_type)
 #[derive(Clone, Debug, Eq, PartialEq, DekuRead, DekuWrite)]
 #[deku(
 	endian = "endian",

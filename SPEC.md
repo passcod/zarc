@@ -20,9 +20,9 @@ Zarc is intended to be fairly simple to parse given a zstd decoder, while provid
 
 # [Zstd Format]
 
-[Zstd Format]: https://github.com/facebook/zstd/blob/7cf62bc274105f5332bf2d28c57cb6e5669da4d8/doc/zstd_compression_format.md
+[Zstd Format]: https://datatracker.ietf.org/doc/html/rfc8878
 
-Here's a quick recap of the zstd format, full specification available at link above:
+Here's a quick recap of the zstd format:
 
 - The format is a sequence of frames
 - Frames can either be Zstandard frames or Skippable frames
@@ -31,7 +31,7 @@ Here's a quick recap of the zstd format, full specification available at link ab
 - Zstandard frames:
   - `[magic][header][blocks...][checksum]`
   - Magic is 0xFD2FB528
-  - Header is 2-14 bytes, described in spec above
+  - Header is 2-14 bytes, described in spec
   - Checksum is optional, last 4 bytes of xxhash64
   - Blocks are:
     - `[last][type][size][data]`
@@ -47,6 +47,10 @@ Here's a quick recap of the zstd format, full specification available at link ab
   - `[magic][size][data]`
   - Magic is 0x184D2A5? where the last nibble **?** is any value from 0 to F
   - Size is unsigned 32-bit int
+
+Further reading:
+- Informational RFC8878: <https://datatracker.ietf.org/doc/html/rfc8878>
+- Most up-to-date spec: <https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md>
 
 # Magic
 

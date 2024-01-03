@@ -412,6 +412,6 @@ $ dust -sbn0 node_modules.zarc
 - [ ] Streaming packing
 - [ ] Streaming unpacking
 - [ ] Profile and optimise
-- [ ] Pure rust zstd?
+- [ ] Pure rust zstd? `ozarc`
   - [ ] Seekable files by adding a blockmap (map of file offsets to blocks)?
 - [ ] Dictionary sig/hash to provide trust that a dictionary on decode is the same as one used on encode
