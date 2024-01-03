@@ -253,6 +253,11 @@ By default, Zarc will unpack the last version of a path, but you can change that
 Appending to a Zarc generates a new keypair and keeps metadata about the prior versions for provenance.
 Zarc stores the insertion date of files and the creation date of the archive itself as well as all prior versions, so you can tell whether a file was appended and when it was created or modified.
 
+### Complexity and extensibility
+
+Tar is considered to be quite complicated to parse, hard to extend, and implementations are frequently incompatible with each others in subtle ways.
+A minor goal of Zarc is to [specify](./SPEC.md) a format that is relatively simple to parse, work with, and extend.
+
 ### Limitations
 
 - Compression is per unique file, so it won't achieve compression gains across similar-but-not-identical files.
