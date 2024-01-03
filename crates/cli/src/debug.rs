@@ -393,7 +393,7 @@ fn parse_frame<'input>(
 								println!("          inserted: {inserted}");
 							}
 							if let Some(created) = ts.created {
-								println!("          created: {created}");
+								println!("          created:  {created}");
 							}
 							if let Some(modified) = ts.modified {
 								println!("          modified: {modified}");

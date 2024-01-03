@@ -414,3 +414,4 @@ $ dust -sbn0 node_modules.zarc
 - [ ] Profile and optimise
 - [ ] Pure rust zstd?
   - [ ] Seekable files by adding a blockmap (map of file offsets to blocks)?
+- [ ] Dictionary sig/hash to provide trust that a dictionary on decode is the same as one used on encode
