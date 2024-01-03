@@ -2,7 +2,7 @@
 
 Zarc is a file format specified on top of the [Zstandard Compression Format][Zstd Format], at this time version 0.4.0.
 
-Zarc is a toy file format: it has not been designed by archive format experts, has received no review, and only has a single implementation.
+Zarc is a toy file format: it has received no review, only has a single implementation, and is not considered mature enough for serious use.
 
 Zarc is intended to be fairly simple to parse given a zstd decoder, while providing some interesting features, like:
 
@@ -17,10 +17,6 @@ Zarc is intended to be fairly simple to parse given a zstd decoder, while provid
 - capable of handling archives larger than memory, or even archives containing more file metadata than would fit in memory (allowed by spec but not yet implemented).
 
 **CAUTION:** the format is currently unstable and changes without version bump or notice.
-
-## Known issues / limitations
-
-- There's an uncompressed overhead per unique file, so if you have a lot of small files, it can be less efficient compared to tar+zstd which may squash the per-file overhead as well as the file content.
 
 # [Zstd Format]
 
