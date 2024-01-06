@@ -103,40 +103,40 @@ fn parse_frame<'input>(
 		println!("  descriptor: {s:08b} (0x{s:02X})", s = input[5]);
 		println!(
 			"    single segment: {}",
-			frame.frame_descriptor.single_segment
+			frame.header.frame_descriptor.single_segment
 		);
-		println!("    has checksum: {}", frame.frame_descriptor.checksum);
-		println!("    unused bit: {}", frame.frame_descriptor.unused_bit);
-		println!("    reserved bit: {}", frame.frame_descriptor.reserved_bit);
+		println!("    has checksum: {}", frame.header.frame_descriptor.checksum);
+		println!("    unused bit: {}", frame.header.frame_descriptor.unused_bit);
+		println!("    reserved bit: {}", frame.header.frame_descriptor.reserved_bit);
 		println!(
 			"    fcs size flag: {f} (0b{f:02b})",
-			f = frame.frame_descriptor.fcs_size
+			f = frame.header.frame_descriptor.fcs_size
 		);
 		println!(
 			"      actual size: {} bytes",
-			frame.frame_descriptor.fcs_length()
+			frame.header.frame_descriptor.fcs_length()
 		);
 		println!(
 			"    did size flag: {f} (0b{f:02b})",
-			f = frame.frame_descriptor.did_size
+			f = frame.header.frame_descriptor.did_size
 		);
 		println!(
 			"      actual size: {} bytes",
-			frame.frame_descriptor.did_length()
+			frame.header.frame_descriptor.did_length()
 		);
 
-		if let Some(w) = frame.window_descriptor {
+		if let Some(w) = frame.header.window_descriptor {
 			println!("  window descriptor: {w} (0x{w:02X})");
 		}
 
-		if !frame.did.is_empty() {
-			println!("  dictionary id: {d} ({d:08X})", d = frame.dictionary_id());
+		if !frame.header.did.is_empty() {
+			println!("  dictionary id: {d} ({d:08X})", d = frame.header.dictionary_id());
 		}
 
 		println!(
 			"  uncompressed size: {} bytes ({:02x?})",
-			frame.uncompressed_size(),
-			frame.frame_content_size
+			frame.header.uncompressed_size(),
+			frame.header.frame_content_size
 		);
 
 		if let Some(k) = frame.checksum {
@@ -177,7 +177,7 @@ fn parse_frame<'input>(
 			let mut buf: Vec<u8> = Vec::with_capacity(
 				usize::try_from(
 					(1024 * 128)
-						.max(frame.uncompressed_size() + 1024.max(frame.uncompressed_size() / 10)),
+						.max(frame.header.uncompressed_size() + 1024.max(frame.header.uncompressed_size() / 10)),
 				)
 				.expect("too large for this arch"),
 			);
@@ -232,7 +232,7 @@ fn parse_frame<'input>(
 				let mut buf: Vec<u8> =
 					Vec::with_capacity(
 						usize::try_from((1024 * 128).max(
-							frame.uncompressed_size() + 1024.max(frame.uncompressed_size() / 10),
+							frame.header.uncompressed_size() + 1024.max(frame.header.uncompressed_size() / 10),
 						))
 						.expect("too large for this arch"),
 					);

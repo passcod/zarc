@@ -2,6 +2,7 @@
 
 use std::{
 	collections::HashMap,
+	fmt,
 	io::{Error, Result, Write},
 };
 
@@ -26,6 +27,20 @@ pub struct Encoder<'writer, W: Write> {
 	framelist: HashMap<Digest, FrameEntry>,
 	offset: usize,
 	compress: bool,
+}
+
+impl<W: Write + fmt::Debug> fmt::Debug for Encoder<'_, W> {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		f.debug_struct("Encoder")
+			.field("writer", &self.writer)
+			.field("zstd", &"zstd-safe compression context")
+			.field("key", &self.key)
+			.field("filemap", &self.filemap)
+			.field("framelist", &self.framelist)
+			.field("offset", &self.offset)
+			.field("compress", &self.compress)
+			.finish()
+	}
 }
 
 impl<'writer, W: Write> Encoder<'writer, W> {
@@ -117,7 +132,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 				},
 			);
 			// add 4 to the frame content size
-			frame.frame_content_size[0] += 4;
+			frame.header.frame_content_size[0] += 4;
 
 			// write edited frame
 			let bytes = frame.to_bytes()?;
@@ -196,17 +211,19 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 	fn write_uncompressed_frame(&mut self, data: &[u8]) -> Result<usize> {
 		use ozarc::framing::*;
 		let mut frame = ZstandardFrame {
-			frame_descriptor: ZstandardFrameDescriptor {
-				fcs_size: 3,
-				single_segment: false,
-				unused_bit: false,
-				reserved_bit: false,
-				checksum: false,
-				did_size: 0,
+			header: ZstandardFrameHeader {
+				frame_descriptor: ZstandardFrameDescriptor {
+					fcs_size: 3,
+					single_segment: false,
+					unused_bit: false,
+					reserved_bit: false,
+					checksum: false,
+					did_size: 0,
+				},
+				window_descriptor: None,
+				did: Vec::new(),
+				frame_content_size: u64::try_from(data.len()).unwrap().to_le_bytes().to_vec(),
 			},
-			window_descriptor: None,
-			did: Vec::new(),
-			frame_content_size: u64::try_from(data.len()).unwrap().to_le_bytes().to_vec(),
 			blocks: data
 				.chunks(u16::MAX as _)
 				.map(|data| ZstandardBlock {

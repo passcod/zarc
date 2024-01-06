@@ -44,7 +44,7 @@ pub const ZSTANDARD_FRAME_MAGIC: &'static [u8] = b"\x28\xB5\x2F\xFD";
 #[derive(Clone, Debug, Eq, PartialEq, DekuRead, DekuWrite)]
 #[deku(endian = "little")]
 pub struct SkippableFrame {
-	#[deku(bytes = "4")]
+	#[deku(bytes = "4", assert = "SkippableFrame::valid_magic(magic)")]
 	magic: u32,
 
 	#[deku(bytes = "4")]
@@ -56,6 +56,13 @@ pub struct SkippableFrame {
 }
 
 impl SkippableFrame {
+	fn valid_magic(magic: &u32) -> bool {
+		let magic_bytes = magic.to_le_bytes();
+		magic_bytes[0] >= 0x50
+			&& magic_bytes[0] <= 0x5F
+			&& &magic_bytes[1..4] == SKIPPABLE_FRAME_MAGIC
+	}
+
 	/// Create a new skippable frame.
 	///
 	/// Panics if the nibble is greater than 15.
@@ -74,18 +81,60 @@ impl SkippableFrame {
 		}
 	}
 
+	/// The magic nibble of this frame.
+	pub fn nibble(&self) -> u8 {
+		(self.magic.to_le_bytes()[0] - 0x50) & 0x0F
+	}
+
 	/// The length of the frame's content.
 	pub fn size(&self) -> usize {
 		self.size as usize
 	}
 }
 
-/// A Zstandard Frame.
+/// A Zstandard Frame header.
+///
+/// See [`ZstandardFrameHeader`] and [`ZstandardBlock`] to read manually (without loading it all in
+/// memory at once).
 ///
 /// [Spec](https://datatracker.ietf.org/doc/html/rfc8878#name-zstandard-frames)
 #[derive(Clone, Debug, Eq, PartialEq, DekuRead, DekuWrite)]
-#[deku(endian = "little", magic = b"\x28\xB5\x2F\xFD")]
+#[deku(endian = "little")]
 pub struct ZstandardFrame {
+	/// Header.
+	pub header: ZstandardFrameHeader,
+
+	/// Blocks.
+	///
+	/// Those are the actual content of the frame.
+	#[deku(until = "|b: &ZstandardBlock| b.header.last")]
+	pub blocks: Vec<ZstandardBlock>,
+
+	/// Optional 32-bit checksum.
+	///
+	/// The lower 4 bytes of the [xxhash64](https://cyan4973.github.io/xxHash/) digested from the
+	/// original content and a seed of zero.
+	///
+	/// Only present if [`ZstandardFrameDescriptor::checksum`] is set.
+	#[deku(bytes = 4, cond = "header.frame_descriptor.checksum")]
+	pub checksum: Option<u32>,
+}
+
+/// A Zstandard Frame header.
+///
+/// This doesn't include the blocks and checksum, so you need to do your own accounting and parse
+/// the blocks until the last, then read the checksum if it's present. See [`ZstandardFrame`] for
+/// an easier interface, at the cost of loading all the blocks in memory.
+///
+/// [Spec](https://datatracker.ietf.org/doc/html/rfc8878#name-zstandard-frames)
+#[derive(Clone, Debug, Eq, PartialEq, DekuRead, DekuWrite)]
+#[deku(
+	magic = b"\x28\xB5\x2F\xFD",
+	endian = "endian",
+	ctx = "endian: deku::ctx::Endian",
+	ctx_default = "deku::ctx::Endian::Little"
+)]
+pub struct ZstandardFrameHeader {
 	/// The frame descriptor.
 	///
 	/// [Spec](https://datatracker.ietf.org/doc/html/rfc8878#section-3.1.1.1.1)
@@ -116,24 +165,9 @@ pub struct ZstandardFrame {
 	/// This needs to be interpreted before it can be used. See [`ZstandardFrame::size()`].
 	#[deku(count = "frame_descriptor.fcs_length()")]
 	pub frame_content_size: Vec<u8>,
-
-	/// Blocks.
-	///
-	/// Those are the actual content of the frame.
-	#[deku(until = "|b: &ZstandardBlock| b.header.last")]
-	pub blocks: Vec<ZstandardBlock>,
-
-	/// Optional 32-bit checksum.
-	///
-	/// The lower 4 bytes of the [xxhash64](https://cyan4973.github.io/xxHash/) digested from the
-	/// original content and a seed of zero.
-	///
-	/// Only present if [`ZstandardFrameDescriptor::checksum`] is set.
-	#[deku(bytes = 4, cond = "frame_descriptor.checksum")]
-	pub checksum: Option<u32>,
 }
 
-impl ZstandardFrame {
+impl ZstandardFrameHeader {
 	/// The uncompressed length of the frame's content in bytes.
 	pub fn uncompressed_size(&self) -> u64 {
 		match self.frame_descriptor.fcs_length() {
@@ -242,7 +276,11 @@ impl ZstandardFrameDescriptor {
 ///
 /// [Spec](https://datatracker.ietf.org/doc/html/rfc8878#name-blocks)
 #[derive(Clone, Debug, Eq, PartialEq, DekuRead, DekuWrite)]
-#[deku(endian = "endian", ctx = "endian: deku::ctx::Endian")]
+#[deku(
+	endian = "endian",
+	ctx = "endian: deku::ctx::Endian",
+	ctx_default = "deku::ctx::Endian::Little"
+)]
 pub struct ZstandardBlock {
 	/// The block header.
 	pub header: ZstandardBlockHeader,
@@ -256,7 +294,11 @@ pub struct ZstandardBlock {
 ///
 /// [Spec](https://datatracker.ietf.org/doc/html/rfc8878#name-blocks)
 #[derive(Clone, Debug, Eq, PartialEq, DekuRead, DekuWrite)]
-#[deku(endian = "endian", ctx = "endian: deku::ctx::Endian")]
+#[deku(
+	endian = "endian",
+	ctx = "endian: deku::ctx::Endian",
+	ctx_default = "deku::ctx::Endian::Little"
+)]
 pub struct ZstandardBlockHeader {
 	#[deku(bits = "5")]
 	size_low: u8,
