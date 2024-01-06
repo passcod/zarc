@@ -44,8 +44,8 @@ pub const ZARC_DIRECTORY_VERSION: u8 = 1;
 #[derive(Clone, Debug, Eq, PartialEq, DekuRead, DekuWrite)]
 #[deku(endian = "little")]
 pub struct ZarcHeader {
-	/// Magic number. Should match [`ZARC_MAGIC`].
-	#[deku(count = "3")]
+	/// Magic number. Asserted to match [`ZARC_MAGIC`].
+	#[deku(count = "3", assert = "*magic == ZARC_MAGIC")]
 	pub magic: Vec<u8>,
 
 	/// File format version number. Should match [`ZARC_FILE_VERSION`].
