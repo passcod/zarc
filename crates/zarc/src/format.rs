@@ -267,6 +267,21 @@ pub enum HashAlgorithm {
 	Blake3,
 }
 
+impl HashAlgorithm {
+	/// Verify that a block of data matches the given digest.
+	pub fn verify_data(self, expected: &Digest, data: &[u8]) -> bool {
+		match self {
+			Self::Blake3 => {
+				let actual = blake3::hash(&data);
+				let Ok(expected_bytes) = expected.as_slice().try_into() else {
+					return false;
+				};
+				blake3::Hash::from_bytes(expected_bytes) == actual
+			}
+		}
+	}
+}
+
 /// Available signature schemes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Encode, Decode)]
 #[cbor(index_only)]
@@ -274,6 +289,30 @@ pub enum SignatureScheme {
 	/// Ed25519 scheme.
 	#[n(1)]
 	Ed25519,
+}
+
+impl SignatureScheme {
+	/// Verify that a block of data matches the given signature.
+	pub fn verify_data(self, public_key: &PublicKey, signature: &Signature, data: &[u8]) -> bool {
+		match self {
+			Self::Ed25519 => {
+				use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+				let Ok(public_key_bytes) = public_key.as_slice().try_into() else {
+					return false;
+				};
+				let Ok(vkey) = VerifyingKey::from_bytes(public_key_bytes) else {
+					return false;
+				};
+
+				let Ok(signature_bytes) = signature.as_slice().try_into() else {
+					return false;
+				};
+				let sig = Signature::from_bytes(signature_bytes);
+
+				vkey.verify(data, &sig).is_ok()
+			}
+		}
+	}
 }
 
 /// Zarc Directory Filemap Entry

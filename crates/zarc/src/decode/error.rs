@@ -15,6 +15,14 @@ pub enum Error {
 	#[error(transparent)]
 	Io(#[from] std::io::Error),
 
+	/// Zstd error.
+	#[error("zstd decompression error: {0}")]
+	Zstd(String),
+
+	/// CBOR error.
+	#[error(transparent)]
+	Cbor(#[from] minicbor::decode::Error),
+
 	/// Decoder error that's just a message.
 	#[error(transparent)]
 	Simple(#[from] SimpleError),
@@ -22,6 +30,11 @@ pub enum Error {
 	/// Decoder error that includes source.
 	#[error(transparent)]
 	Source(#[from] SourceError),
+}
+
+pub(crate) fn zstd(code: usize) -> Error {
+	let msg = zstd_safe::get_error_name(code);
+	Error::Zstd(msg.into())
 }
 
 /// Decoder error.
@@ -136,6 +149,9 @@ pub enum ErrorKind {
 	/// The file version number is repeated several times in a Zarc file, and they must all match.
 	MismatchedFileVersion,
 
+	/// The directory's integrity is compromised.
+	DirectoryIntegrity(&'static str),
+
 	/// Parse error.
 	Parse,
 }
@@ -157,6 +173,9 @@ impl ErrorKind {
 			}
 			ErrorKind::InvalidUnintendedMagic => Cow::Borrowed("malformed unintended magic header"),
 			ErrorKind::MismatchedFileVersion => Cow::Borrowed("mismatched file version"),
+			ErrorKind::DirectoryIntegrity(what) => {
+				Cow::Owned(format!("directory integrity compromised: {what}"))
+			}
 			ErrorKind::Parse => Cow::Borrowed("parse error"),
 		}
 	}
