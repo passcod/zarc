@@ -14,7 +14,10 @@ use ozarc::framing::{
 use tracing::{debug, trace};
 use zstd_safe::DCtx;
 
-use crate::format::{Digest, ZarcEofTrailer, ZarcHeader};
+use crate::format::{
+	Digest, HashAlgorithm, Signature, SignatureScheme, ZarcDirectoryHeader, ZarcEofTrailer,
+	ZarcHeader,
+};
 
 use self::error::{ErrorKind, Result, SimpleError};
 
@@ -28,6 +31,7 @@ pub struct Decoder<'reader, R> {
 	zstd: DCtx<'reader>,
 	file_version: Option<NonZeroU8>,
 	directory_header_offset: Option<NonZeroU64>,
+	directory_header: Option<ZarcDirectoryHeader>,
 }
 
 impl<R: fmt::Debug> fmt::Debug for Decoder<'_, R> {
@@ -37,6 +41,7 @@ impl<R: fmt::Debug> fmt::Debug for Decoder<'_, R> {
 			.field("zstd", &"zstd-safe decompression context")
 			.field("file_version", &self.file_version)
 			.field("directory_header_offset", &self.directory_header_offset)
+			.field("directory_header", &self.directory_header)
 			.finish()
 	}
 }
@@ -49,6 +54,7 @@ impl<'reader, R: Read + Seek> Decoder<'reader, R> {
 			zstd: DCtx::try_create().ok_or(ErrorKind::ZstdInit)?,
 			file_version: None,
 			directory_header_offset: None,
+			directory_header: None,
 		})
 	}
 
@@ -57,6 +63,27 @@ impl<'reader, R: Read + Seek> Decoder<'reader, R> {
 	/// This is known once the header has been read.
 	pub fn file_version(&self) -> Option<u8> {
 		self.file_version.map(NonZeroU8::get)
+	}
+
+	/// Return the directory digest.
+	///
+	/// This is known once the directory has been read.
+	pub fn directory_digest(&self) -> Option<(HashAlgorithm, &Digest)> {
+		todo!()
+	}
+
+	/// Return the directory signature.
+	///
+	/// This is known once the directory has been read.
+	pub fn directory_signature(&self) -> Option<(SignatureScheme, &Signature)> {
+		todo!()
+	}
+
+	/// Return the directory size (uncompressed).
+	///
+	/// This is known once the directory header has been read.
+	pub fn directory_size(&self) -> Option<u64> {
+		self.directory_header.as_ref().map(|dh| dh.directory_size)
 	}
 
 	/// Read a Skippable frame, checking its nibble.
@@ -162,7 +189,7 @@ impl<'reader, R: Read + Seek> Decoder<'reader, R> {
 			ZarcHeader::from_reader((&mut self.reader, 0)).map_err(SimpleError::from_deku)?;
 		debug!(%bits_read, ?unintended_magic, "read zarc header in unintended magic raw block");
 		if unintended_magic.file_version != file_version.get() {
-			return Err(ErrorKind::InvalidUnintendedMagic.into());
+			return Err(ErrorKind::MismatchedFileVersion.into());
 		}
 
 		debug!("unintended magic is valid, skip to the end of the frame");
@@ -209,6 +236,46 @@ impl<'reader, R: Read + Seek> Decoder<'reader, R> {
 		});
 
 		Ok(offset)
+	}
+
+	/// Read Zarc Directory Header.
+	///
+	/// This reads the Zarc Directory Header, and leaves the cursor at the end of the frame.
+	#[cfg_attr(feature = "expose-internals", visibility::make(pub))]
+	fn read_directory_header(&mut self) -> Result<()> {
+		if self.directory_header.is_some() {
+			return Err(
+				ErrorKind::ReadOrderViolation("directory header cannot be read twice").into(),
+			);
+		};
+		let Some(offset) = self.directory_header_offset else {
+			return Err(ErrorKind::ReadOrderViolation(
+				"directory header cannot be read before trailer",
+			)
+			.into());
+		};
+		let Some(file_version) = self.file_version else {
+			return Err(ErrorKind::ReadOrderViolation(
+				"directory cannot be read before file header",
+			)
+			.into());
+		};
+
+		debug!(?offset, "seek to directory header");
+		self.reader.seek(SeekFrom::End(-(offset.get() as i64)))?;
+
+		let frame = self.read_skippable_frame(0xF)?;
+		let mut content = Cursor::new(frame.data);
+		let (bits_read, directory_header) =
+			ZarcDirectoryHeader::from_reader((&mut content, 0)).map_err(SimpleError::from_deku)?;
+		debug!(%bits_read, ?directory_header, "read zarc directory header");
+
+		if directory_header.file_version != file_version.get() {
+			return Err(ErrorKind::MismatchedFileVersion.into());
+		}
+
+		self.directory_header = Some(directory_header);
+		Ok(())
 	}
 }
 

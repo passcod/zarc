@@ -133,6 +133,9 @@ pub enum ErrorKind {
 	/// Unintended magic header was malformed.
 	InvalidUnintendedMagic,
 
+	/// The file version number is repeated several times in a Zarc file, and they must all match.
+	MismatchedFileVersion,
+
 	/// Parse error.
 	Parse,
 }
@@ -153,6 +156,7 @@ impl ErrorKind {
 				Cow::Owned(format!("read order violation: {what}"))
 			}
 			ErrorKind::InvalidUnintendedMagic => Cow::Borrowed("malformed unintended magic header"),
+			ErrorKind::MismatchedFileVersion => Cow::Borrowed("mismatched file version"),
 			ErrorKind::Parse => Cow::Borrowed("parse error"),
 		}
 	}

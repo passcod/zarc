@@ -25,6 +25,8 @@ pub(crate) fn unpack(args: UnpackArgs) -> miette::Result<()> {
 	zarc.read_header()?;
 	zarc.read_unintended_magic()?;
 	zarc.read_eof_trailer()?;
+	zarc.read_directory_header()?;
+	dbg!(zarc.directory_size());
 
 	Ok(())
 }
