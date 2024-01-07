@@ -408,7 +408,7 @@ $ dust -sbn0 node_modules.zarc
   - [ ] Unpack windows alternate data stream extended attributes
   - [ ] Override user/group
   - [ ] User/group mappings
-- [ ] `zarc list-files`
+- [x] `zarc list-files`
 - [ ] Streaming packing
 - [ ] Streaming unpacking
 - [ ] Profile and optimise

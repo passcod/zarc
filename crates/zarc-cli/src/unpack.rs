@@ -22,11 +22,8 @@ pub(crate) fn unpack(args: UnpackArgs) -> miette::Result<()> {
 	info!("initialise decoder");
 	let mut zarc = Decoder::new(&mut file)?;
 
-	zarc.read_header()?;
-	zarc.read_unintended_magic()?;
-	zarc.read_eof_trailer()?;
-	zarc.read_directory_header()?;
-	dbg!(zarc.directory_size());
+	info!("prepare and check the file");
+	zarc.prepare()?;
 
 	Ok(())
 }
