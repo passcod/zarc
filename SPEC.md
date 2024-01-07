@@ -256,7 +256,10 @@ _Array of Raw._ **Mandatory.**
 If items are of the UTF-8 _Text string_ CBOR type, then they represent UTF-8-encoded Unicode pathname components.
 If items are of the _Byte string_ CBOR type instead, then they represent raw (non-Unicode) pathname components.
 
+Windows implementations MUST convert raw UTF-16 to UTF-8 during encoding, and from raw bytes to UTF-8 during decoding, and replace invalid wide character sequences with the Unicode REPLACEMENT CHARACTER.
+
 Non-Unicode pathnames may not be supported on all filesystems / operating systems.
+Implementations SHOULD strongly prefer UTF-8, and SHOULD warn when paths do not convert cleanly.
 
 Zarc makes no effort to restrict valid pathnames.
 The exception is that the components `.` and `..` are disallowed.
