@@ -32,7 +32,7 @@ tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
 umask = "2.1.0"
 walkdir = "2.4.0"
-zarc = { version = "0.0.1", path = "../zarc" }
+zarc = { version = "0.0.1", path = "../zarc", features = ["expose-internals"] }
 zstd-safe = { version = "7.0.0", features = ["experimental"] }
 
 [build-dependencies]

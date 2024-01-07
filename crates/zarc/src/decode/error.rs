@@ -125,6 +125,14 @@ pub enum ErrorKind {
 	/// Unsupported zarc file version.
 	UnsupportedFileVersion(u8),
 
+	/// When using internal methods manually, you can read sections of a Zarc file out of order,
+	/// before necessary details are available, which will cause this error. The public API
+	/// guarantees this never occurs.
+	ReadOrderViolation(&'static str),
+
+	/// Unintended magic header was malformed.
+	InvalidUnintendedMagic,
+
 	/// Parse error.
 	Parse,
 }
@@ -141,6 +149,10 @@ impl ErrorKind {
 				"unsupported zarc file version {version}, this zarc supports versions {:?}",
 				[crate::format::ZARC_FILE_VERSION]
 			)),
+			ErrorKind::ReadOrderViolation(what) => {
+				Cow::Owned(format!("read order violation: {what}"))
+			}
+			ErrorKind::InvalidUnintendedMagic => Cow::Borrowed("malformed unintended magic header"),
 			ErrorKind::Parse => Cow::Borrowed("parse error"),
 		}
 	}

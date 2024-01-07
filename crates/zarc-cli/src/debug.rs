@@ -105,9 +105,18 @@ fn parse_frame<'input>(
 			"    single segment: {}",
 			frame.header.frame_descriptor.single_segment
 		);
-		println!("    has checksum: {}", frame.header.frame_descriptor.checksum);
-		println!("    unused bit: {}", frame.header.frame_descriptor.unused_bit);
-		println!("    reserved bit: {}", frame.header.frame_descriptor.reserved_bit);
+		println!(
+			"    has checksum: {}",
+			frame.header.frame_descriptor.checksum
+		);
+		println!(
+			"    unused bit: {}",
+			frame.header.frame_descriptor.unused_bit
+		);
+		println!(
+			"    reserved bit: {}",
+			frame.header.frame_descriptor.reserved_bit
+		);
 		println!(
 			"    fcs size flag: {f} (0b{f:02b})",
 			f = frame.header.frame_descriptor.fcs_size
@@ -130,7 +139,10 @@ fn parse_frame<'input>(
 		}
 
 		if !frame.header.did.is_empty() {
-			println!("  dictionary id: {d} ({d:08X})", d = frame.header.dictionary_id());
+			println!(
+				"  dictionary id: {d} ({d:08X})",
+				d = frame.header.dictionary_id()
+			);
 		}
 
 		println!(
@@ -175,10 +187,10 @@ fn parse_frame<'input>(
 			zstd.init().map_err(map_zstd_error)?;
 
 			let mut buf: Vec<u8> = Vec::with_capacity(
-				usize::try_from(
-					(1024 * 128)
-						.max(frame.header.uncompressed_size() + 1024.max(frame.header.uncompressed_size() / 10)),
-				)
+				usize::try_from((1024 * 128).max(
+					frame.header.uncompressed_size()
+						+ 1024.max(frame.header.uncompressed_size() / 10),
+				))
 				.expect("too large for this arch"),
 			);
 			match zstd.decompress(&mut buf, &input).map_err(map_zstd_error) {
@@ -229,13 +241,13 @@ fn parse_frame<'input>(
 					.ok_or_else(|| Error::other("failed allocating zstd context"))?;
 				zstd.init().map_err(map_zstd_error)?;
 
-				let mut buf: Vec<u8> =
-					Vec::with_capacity(
-						usize::try_from((1024 * 128).max(
-							frame.header.uncompressed_size() + 1024.max(frame.header.uncompressed_size() / 10),
-						))
-						.expect("too large for this arch"),
-					);
+				let mut buf: Vec<u8> = Vec::with_capacity(
+					usize::try_from((1024 * 128).max(
+						frame.header.uncompressed_size()
+							+ 1024.max(frame.header.uncompressed_size() / 10),
+					))
+					.expect("too large for this arch"),
+				);
 				let bytes = match zstd.decompress(&mut buf, &input).map_err(map_zstd_error) {
 					Ok(bytes) => bytes,
 					Err(err) => {

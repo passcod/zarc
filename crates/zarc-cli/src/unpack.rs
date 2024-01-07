@@ -23,6 +23,8 @@ pub(crate) fn unpack(args: UnpackArgs) -> miette::Result<()> {
 	let mut zarc = Decoder::new(&mut file)?;
 
 	zarc.read_header()?;
+	zarc.read_unintended_magic()?;
+	zarc.read_eof_trailer()?;
 
 	Ok(())
 }
