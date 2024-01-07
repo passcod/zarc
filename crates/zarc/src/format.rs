@@ -4,7 +4,7 @@ use std::{
 	collections::HashMap,
 	ffi::OsStr,
 	fmt,
-	path::{Component, Path},
+	path::{Component, Path, PathBuf},
 	time::SystemTime,
 };
 
@@ -356,6 +356,31 @@ impl Pathname {
 				.collect(),
 		)
 	}
+
+	/// Converts to a (platform-specific) Path.
+	pub fn to_path(&self) -> PathBuf {
+		let mut path = PathBuf::new();
+		for comp in &self.0 {
+			match comp {
+				CborString::Text(text) => {
+					path.push(text);
+				}
+				CborString::Binary(bytes) => {
+					#[cfg(unix)]
+					{
+						use std::os::unix::ffi::OsStrExt;
+						path.push(OsStr::from_bytes(bytes));
+					}
+					#[cfg(not(unix))]
+					{
+						path.push(String::from_utf8_lossy(bytes));
+					}
+				}
+			}
+		}
+
+		path
+	}
 }
 
 /// CBOR Text or Byte string.
@@ -388,9 +413,10 @@ impl From<&OsStr> for CborString {
 				use std::os::unix::ffi::OsStrExt;
 				Self::Binary(string.as_bytes().into())
 			}
-			#[cfg(not(unix))]
+			#[cfg(windows)]
 			{
-				Self::Binary(string.as_encoded_bytes().into())
+				use std::os::windows::ffi::OsStrExt;
+				Self::Text(String::from_utf16_lossy(&string.encode_wide().collect()))
 			}
 		}
 	}
