@@ -384,6 +384,8 @@ Timestamps can be stored in either:
 - [RFC3339 in _text string_ with semantic tag `0`](https://www.rfc-editor.org/rfc/rfc8949.html#name-standard-date-time-string)
 - [seconds from epoch as unsigned or negative integer, or binary64 floating point, with semantic tag `1`](https://www.rfc-editor.org/rfc/rfc8949.html#name-epoch-based-date-time)
 
+> **Non-normative implementation note:** the Zarc reference implementation _accepts_ all formats for a timestamp, but always _writes_ RFC3339 text string datetimes.
+
 #### `30`: Special File Types
 
 _Array[unsigned integer, ...CBOR]._ **Optional.**
