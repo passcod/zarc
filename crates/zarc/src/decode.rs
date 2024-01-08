@@ -5,6 +5,8 @@ use std::{
 	fmt,
 	io::{Cursor, Read, Seek, SeekFrom},
 	num::{NonZeroU64, NonZeroU8},
+	ops::ControlFlow,
+	path::Path,
 	rc::Rc,
 };
 
@@ -520,25 +522,175 @@ impl<'reader, R: Read + Seek> Decoder<'reader, R> {
 	}
 
 	/// Iterate through the filemap.
-	pub fn with_filemap(&mut self, fun: impl Fn(&FilemapEntry) -> Result<()>) -> Result<()> {
+	///
+	/// TODO: Really this should be an iterator but I'm not smart enough to write it.
+	pub fn with_filemap(&mut self, fun: impl Fn(&FilemapEntry)) -> Result<()> {
+		self.traverse_filemap(|entry| {
+			fun(entry);
+			Ok(ControlFlow::Continue(()))
+		})
+		.map(drop)
+	}
+
+	/// Lookup a file by path.
+	///
+	/// This is O(n) on the number of files in the archive, so it's not recommended to use it
+	/// repeatedly. Use [`Self::with_filemap()`] instead.
+	pub fn lookup_path(&mut self, path: impl AsRef<Path>) -> Result<Option<FilemapEntry>> {
+		let path = path.as_ref();
+		self.traverse_filemap(|entry| {
+			if entry.name.to_path() == path {
+				Ok(ControlFlow::Break(entry))
+			} else {
+				Ok(ControlFlow::Continue(()))
+			}
+		})
+	}
+
+	/// Gather all the files in the archive.
+	pub fn filemap(&mut self) -> Result<Vec<FilemapEntry>> {
+		let mut filemap = Vec::new();
+		self.traverse_filemap(|entry| {
+			filemap.push(entry.clone());
+			Ok(ControlFlow::Continue(()))
+		})?;
+		Ok(filemap)
+	}
+
+	fn traverse_filemap(
+		&mut self,
+		mut fun: impl FnMut(&FilemapEntry) -> Result<ControlFlow<&FilemapEntry>>,
+	) -> Result<Option<FilemapEntry>> {
 		if let Some(directory) = self.directory.as_ref().map(|dh| Rc::clone(dh)) {
 			for entry in directory.filemap.iter() {
-				fun(entry)?;
+				match fun(entry)? {
+					ControlFlow::Continue(()) => (),
+					ControlFlow::Break(entry) => return Ok(Some(entry.clone())),
+				}
 			}
 		} else {
 			todo!("streaming filemap");
 		}
 
-		Ok(())
+		Ok(None)
+	}
+
+	/// Decompress a frame by digest.
+	///
+	/// This returns an iterator of chunks of bytes. Each call to the iterator decompresses some
+	/// data and returns it, until the frame is exhausted.
+	pub fn decompress_frame(
+		&'reader mut self,
+		digest: &Digest,
+	) -> Result<Option<FrameIterator<'reader, R>>> {
+		let Some(entry) = self.frame_lookup.get(digest) else {
+			return Ok(None);
+		};
+
+		let offset = entry.offset;
+		self.reader.seek(SeekFrom::Start(offset))?;
+
+		Ok(Some(FrameIterator::new(
+			self,
+			digest.clone(),
+			entry.uncompressed_size,
+		)))
 	}
 }
 
 /// Frame lookup table entry.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug)]
 pub struct FrameLookupEntry {
 	/// Frame offset.
 	pub offset: u64,
 
 	/// Uncompressed payload size in bytes.
 	pub uncompressed_size: u64,
+}
+
+/// Iterator over a frame's chunks.
+///
+/// This is returned by [`Decoder::decompress_frame()`].
+///
+/// Each call to the iterator decompresses some data and returns it, until the frame is exhausted.
+/// It also computes the frame's digest as it goes, so you can check it against the one you used to
+/// request the frame.
+#[derive(Debug)]
+pub struct FrameIterator<'a, R> {
+	decoder: &'a mut Decoder<'a, R>,
+	hasher: blake3::Hasher,
+	digest: Digest,
+	done: bool,
+	uncompressed_size: u64,
+	uncompressed_read: u64,
+}
+
+impl<'a, R> FrameIterator<'a, R> {
+	pub(crate) fn new(
+		decoder: &'a mut Decoder<'a, R>,
+		digest: Digest,
+		uncompressed_size: u64,
+	) -> Self {
+		Self {
+			decoder,
+			hasher: blake3::Hasher::new(),
+			digest,
+			done: false,
+			uncompressed_size,
+			uncompressed_read: 0,
+		}
+	}
+
+	/// Return the uncompressed size of the frame.
+	pub fn uncompressed_size(&self) -> u64 {
+		self.uncompressed_size
+	}
+
+	/// How many (uncompressed) bytes are left to go.
+	pub fn bytes_left(&self) -> u64 {
+		self.uncompressed_size
+			.saturating_sub(self.uncompressed_read)
+	}
+
+	/// Return the digest of the frame.
+	///
+	/// Returns None if the iterator isn't yet done.
+	pub fn digest(&self) -> Option<Digest> {
+		if self.done {
+			Some(Digest(self.hasher.finalize().as_bytes().to_vec()))
+		} else {
+			None
+		}
+	}
+
+	/// Check the digest of the frame.
+	///
+	/// Returns None if the iterator isn't yet done.
+	pub fn verify(&self) -> Option<bool> {
+		self.digest().map(|d| d == self.digest)
+	}
+}
+
+impl<'a, R: Read + Seek> Iterator for FrameIterator<'a, R> {
+	type Item = Result<Vec<u8>>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		if self.done {
+			return None;
+		}
+
+		let (data, done) = match self.decoder.decompress_step() {
+			Ok(ok) => ok,
+			Err(err) => return Some(Err(err)),
+		};
+
+		self.uncompressed_read += data.len() as u64;
+		self.hasher.update(&data);
+
+		if done {
+			self.done = true;
+		}
+
+		Some(Ok(data))
+	}
 }

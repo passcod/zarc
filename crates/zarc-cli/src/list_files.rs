@@ -2,6 +2,7 @@ use std::{fs::File, path::PathBuf};
 
 use clap::{Parser, ValueHint};
 use miette::IntoDiagnostic;
+use regex::Regex;
 use tracing::info;
 use zarc::{decode::Decoder, format::SpecialFileKind};
 
@@ -23,6 +24,12 @@ pub struct ListFilesArgs {
 	/// Directories are marked with a '/' suffix, symlinks with `@`, hardlinks with `#`.
 	#[arg(long)]
 	pub decorate: bool,
+
+	/// Filter files by name (with a regex).
+	///
+	/// Can be given multiple times, and files will be matched if they match any of the regexes.
+	#[arg(long, value_name = "REGEX")]
+	pub filter: Vec<Regex>,
 }
 
 pub(crate) fn list_files(args: ListFilesArgs) -> miette::Result<()> {
@@ -38,10 +45,17 @@ pub(crate) fn list_files(args: ListFilesArgs) -> miette::Result<()> {
 	info!("list files");
 	zarc.with_filemap(|entry| {
 		if args.only_files && entry.special.is_some() {
-			return Ok(());
+			return;
 		}
 
-		print!("{}", entry.name.to_path().display());
+		let name = entry.name.to_path().display().to_string();
+		if !args.filter.is_empty() {
+			if !args.filter.iter().any(|filter| filter.is_match(&name)) {
+				return;
+			}
+		}
+
+		print!("{name}");
 		match entry.special.as_ref().and_then(|sp| sp.kind) {
 			Some(SpecialFileKind::Directory) => print!("/"),
 			Some(kind) if kind.is_symlink() => print!("@"),
@@ -50,7 +64,6 @@ pub(crate) fn list_files(args: ListFilesArgs) -> miette::Result<()> {
 		}
 
 		println!("");
-		Ok(())
 	})?;
 
 	Ok(())

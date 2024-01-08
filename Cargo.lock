@@ -2756,6 +2756,7 @@ dependencies = [
  "minicbor",
  "ozarc",
  "rand",
+ "regex",
  "tracing",
  "tracing-subscriber",
  "umask",
