@@ -393,24 +393,27 @@ This is a structure which encodes special file types.
 The mandatory first array item is the type of the special file.
 Implementations SHOULD ignore unknown or impractical special types.
 
-  - `1` — directory entry.
+  - `1` — **directory entry.**
     May be used to encode metadata or (x)attributes against a directory.
-  - `10` — unspecified link.
+
+  - `10` — **unspecified symlink.**
     MUST be followed by the pathname of the link target.
-    Implementations can interpret this however they see fit.
-  - `11` — internal hardlink.
+    - `11` — **internal symlink.**
+      MUST be followed by the pathname of another file contained in this Zarc.
+    - `12` — **external absolute symlink.**
+      MUST be followed by the absolute pathname of a file to symlink to.
+      Implementations MAY reject this (e.g. for security reasons).
+    - `13` — **external relative symlink.**
+      MUST be followed by the relative pathname of a file to symlink to.
+      Implementations MAY reject this (e.g. for security reasons).
+
+  - `20` — **unspecified hardlink.**
     MUST be followed by the pathname of another file contained in this Zarc.
-  - `12` — external hardlink.
-    MUST be followed by the absolute pathname of a file to hardlink to.
-    Implementations MAY reject this (e.g. for security reasons).
-  - `13` — internal symlink.
-    MUST be followed by the pathname of another file contained in this Zarc.
-  - `14` — external absolute symlink.
-    MUST be followed by the absolute pathname of a file to symlink to.
-    Implementations MAY reject this (e.g. for security reasons).
-  - `15` — external relative symlink.
-    MUST be followed by the relative pathname of a file to symlink to.
-    Implementations MAY reject this (e.g. for security reasons).
+    - `21` — **internal hardlink.**
+      MUST be followed by the pathname of another file contained in this Zarc.
+    - `22` — **external hardlink.**
+      MUST be followed by the absolute pathname of a file to hardlink to.
+      Implementations MAY reject this (e.g. for security reasons).
 
 Pathnames (as the conditional second array item) are either:
 - _Byte string_ or _Text string_. An absolute or relative full pathname with platform-specific separators;

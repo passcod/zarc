@@ -66,7 +66,7 @@ pub fn build_filemap(
 			})
 		} else if is_symlink {
 			Some(SpecialFile {
-				kind: Some(SpecialFileKind::Link),
+				kind: Some(SpecialFileKind::Symlink),
 				link_target: link_target.map(|path| path.as_path().into()),
 			})
 		} else {

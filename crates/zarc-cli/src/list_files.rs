@@ -20,7 +20,7 @@ pub struct ListFilesArgs {
 
 	/// Indicate filetypes with suffixes.
 	///
-	/// Directories are marked with a '/' suffix, links with `@`.
+	/// Directories are marked with a '/' suffix, symlinks with `@`, hardlinks with `#`.
 	#[arg(long)]
 	pub decorate: bool,
 }
@@ -43,9 +43,9 @@ pub(crate) fn list_files(args: ListFilesArgs) -> miette::Result<()> {
 
 		print!("{}", entry.name.to_path().display());
 		match entry.special.as_ref().and_then(|sp| sp.kind) {
-			Some(_) if args.only_files => (),
 			Some(SpecialFileKind::Directory) => print!("/"),
-			Some(SpecialFileKind::Link) => print!("@"),
+			Some(kind) if kind.is_symlink() => print!("@"),
+			Some(kind) if kind.is_hardlink() => print!("#"),
 			_ => (),
 		}
 

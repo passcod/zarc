@@ -784,35 +784,78 @@ pub enum SpecialFileKind {
 	#[n(1)]
 	Directory = 1,
 
-	/// A link.
+	/// A symlink.
 	///
-	/// Some kind of link, but without specifying what exactly it is.
+	/// Some kind of symlink, but without specifying what exactly it is.
 	#[n(10)]
-	Link = 10,
-
-	/// Internal hardlink.
-	///
-	/// Must point to a file that exists within this Zarc.
-	#[n(11)]
-	InternalHardlink = 11,
-
-	/// External hardlink.
-	#[n(12)]
-	ExternalHardlink = 12,
+	Symlink = 10,
 
 	/// Internal symbolic link.
 	///
 	/// Must point to a file that exists within this Zarc.
-	#[n(13)]
-	InternalSymlink = 13,
+	#[n(11)]
+	InternalSymlink = 11,
 
 	/// External absolute symbolic link.
-	#[n(14)]
-	ExternalAbsoluteSymlink = 14,
+	#[n(12)]
+	ExternalAbsoluteSymlink = 12,
 
 	/// External relative symbolic link.
-	#[n(15)]
-	ExternalRelativeSymlink = 15,
+	#[n(13)]
+	ExternalRelativeSymlink = 13,
+
+	/// A hardlink.
+	///
+	/// Some kind of hardlink, but without specifying what exactly it is.
+	#[n(20)]
+	Hardlink = 20,
+
+	/// Internal hardlink.
+	///
+	/// Must point to a file that exists within this Zarc.
+	#[n(21)]
+	InternalHardlink = 21,
+
+	/// External hardlink.
+	#[n(22)]
+	ExternalHardlink = 22,
+}
+
+impl SpecialFileKind {
+	/// Returns `true` if this is a directory.
+	pub fn is_dir(self) -> bool {
+		matches!(self, Self::Directory)
+	}
+
+	/// Returns `true` if this is a link.
+	///
+	/// This covers all the symlink and hardlink variants.
+	pub fn is_link(self) -> bool {
+		self.is_symlink() || self.is_hardlink()
+	}
+
+	/// Returns `true` if this is a symlink.
+	///
+	/// This covers all the symlink variants.
+	pub fn is_symlink(self) -> bool {
+		matches!(
+			self,
+			Self::Symlink
+				| Self::InternalSymlink
+				| Self::ExternalAbsoluteSymlink
+				| Self::ExternalRelativeSymlink
+		)
+	}
+
+	/// Returns `true` if this is a hardlink.
+	///
+	/// This covers all the hardlink variants.
+	pub fn is_hardlink(self) -> bool {
+		matches!(
+			self,
+			Self::Hardlink | Self::InternalHardlink | Self::ExternalHardlink
+		)
+	}
 }
 
 /// Target of link (for [`SpecialFile`])
