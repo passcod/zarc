@@ -126,6 +126,32 @@ pub struct ZarcEofTrailer {
 	pub directory_frames_size: u64,
 }
 
+/// Zarc Directory Prelude
+///
+/// This is the same thing as the [`ZarcDirectory`], but only the first four fields are present.
+/// It is used in directory streaming mode to verify the directory before continuing to decode.
+///
+/// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#zarc-directory)
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+#[cbor(map)]
+pub struct ZarcDirectoryPrelude {
+	/// Directory version. Should match [`ZARC_DIRECTORY_VERSION`].
+	#[n(0)]
+	pub version: u8,
+
+	/// Digest (hash) algorithm.
+	#[n(1)]
+	pub hash_algorithm: HashAlgorithm,
+
+	/// Signature scheme.
+	#[n(2)]
+	pub signature_scheme: SignatureScheme,
+
+	/// Public key.
+	#[n(3)]
+	pub public_key: PublicKey,
+}
+
 /// Zarc Directory
 ///
 /// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#zarc-directory)
