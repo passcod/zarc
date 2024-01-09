@@ -5,8 +5,6 @@ use std::{
 	fmt,
 	io::{Cursor, Read, Seek, SeekFrom},
 	num::{NonZeroU64, NonZeroU8},
-	ops::ControlFlow,
-	path::Path,
 	rc::Rc,
 };
 
@@ -17,9 +15,12 @@ use ozarc::framing::{
 use tracing::{debug, instrument, trace};
 use zstd_safe::{DCtx, InBuffer, OutBuffer};
 
-use crate::format::{
-	Digest, FilemapEntry, HashAlgorithm, Signature, SignatureScheme, ZarcDirectory,
-	ZarcDirectoryHeader, ZarcEofTrailer, ZarcHeader,
+use crate::{
+	format::{
+		Digest, FilemapEntry, HashAlgorithm, Signature, SignatureScheme, ZarcDirectory,
+		ZarcDirectoryHeader, ZarcEofTrailer, ZarcHeader, FILE_MAGIC,
+	},
+	ondemand::OnDemand,
 };
 
 use self::error::{ErrorKind, Result, SimpleError};
@@ -29,9 +30,9 @@ pub mod error;
 /// Decoder context.
 ///
 /// Reader needs to be Seek, as Zarc reads the file backwards from the end to find the directory.
-pub struct Decoder<'reader, R> {
-	reader: &'reader mut R,
-	zstd: DCtx<'reader>,
+#[derive(Debug)]
+pub struct Decoder<R> {
+	reader: R,
 
 	/// File version number, once known. At this point only one version is supported, so this is
 	/// mostly used to check that the other file version fields in the various headers match it.
@@ -54,26 +55,11 @@ pub struct Decoder<'reader, R> {
 	directory: Option<Rc<ZarcDirectory>>,
 }
 
-impl<R: fmt::Debug> fmt::Debug for Decoder<'_, R> {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		f.debug_struct("Decoder")
-			.field("reader", &self.reader)
-			.field("zstd", &"zstd-safe decompression context")
-			.field("file_version", &self.file_version)
-			.field("directory_header_offset", &self.directory_header_offset)
-			.field("directory_offset", &self.directory_offset)
-			.field("directory_header", &self.directory_header)
-			.field("frame_lookup", &self.frame_lookup)
-			.finish()
-	}
-}
-
-impl<'reader, R: Read + Seek> Decoder<'reader, R> {
+impl<R: OnDemand> Decoder<R> {
 	/// Create a new decoder.
-	pub fn new(reader: &'reader mut R) -> Result<Self> {
+	pub fn new(reader: R) -> Result<Self> {
 		Ok(Self {
 			reader,
-			zstd: DCtx::try_create().ok_or(ErrorKind::ZstdInit)?,
 			file_version: None,
 			directory_header_offset: None,
 			directory_offset: None,
@@ -115,10 +101,10 @@ impl<'reader, R: Read + Seek> Decoder<'reader, R> {
 	///
 	/// Reads and returns the entire frame's payload, and thus seeks to the end of the frame.
 	#[cfg_attr(feature = "expose-internals", visibility::make(pub))]
-	#[instrument(level = "debug", skip(self))]
-	fn read_skippable_frame(&mut self, nibble: u8) -> Result<SkippableFrame> {
+	#[instrument(level = "debug", skip(reader))]
+	fn read_skippable_frame(reader: &mut R::Reader, nibble: u8) -> Result<SkippableFrame> {
 		let (bits_read, frame) =
-			SkippableFrame::from_reader((&mut self.reader, 0)).map_err(SimpleError::from_deku)?;
+			SkippableFrame::from_reader((reader, 0)).map_err(SimpleError::from_deku)?;
 		debug!(%bits_read, ?frame, nibble=%format!("0x{:X}", frame.nibble()), "read skippable frame");
 
 		if frame.nibble() != nibble {
@@ -141,10 +127,10 @@ impl<'reader, R: Read + Seek> Decoder<'reader, R> {
 	/// a time until the one marked `last`, and then reading the checksum
 	/// [if present as per this header](ozarc::framing::ZstandardFrameDescriptor.checksum).
 	#[cfg_attr(feature = "expose-internals", visibility::make(pub))]
-	#[instrument(level = "debug", skip(self))]
-	fn read_zstandard_frame_header(&mut self) -> Result<ZstandardFrameHeader> {
-		let (bits_read, header) = ZstandardFrameHeader::from_reader((&mut self.reader, 0))
-			.map_err(SimpleError::from_deku)?;
+	#[instrument(level = "debug", skip(reader))]
+	fn read_zstandard_frame_header(reader: &mut R::Reader) -> Result<ZstandardFrameHeader> {
+		let (bits_read, header) =
+			ZstandardFrameHeader::from_reader((reader, 0)).map_err(SimpleError::from_deku)?;
 		debug!(%bits_read, ?header, "read zstandard frame header");
 		Ok(header)
 	}
@@ -154,22 +140,12 @@ impl<'reader, R: Read + Seek> Decoder<'reader, R> {
 	/// This reads the block header, checks that it's a Zstandard block, and leaves the reader at
 	/// the start of the block's payload. The block header is returned.
 	#[cfg_attr(feature = "expose-internals", visibility::make(pub))]
-	#[instrument(level = "debug", skip(self))]
-	fn read_zstandard_block_header(&mut self) -> Result<ZstandardBlockHeader> {
-		let (bits_read, header) = ZstandardBlockHeader::from_reader((&mut self.reader, 0))
-			.map_err(SimpleError::from_deku)?;
+	#[instrument(level = "debug", skip(reader))]
+	fn read_zstandard_block_header(reader: &mut R::Reader) -> Result<ZstandardBlockHeader> {
+		let (bits_read, header) =
+			ZstandardBlockHeader::from_reader((reader, 0)).map_err(SimpleError::from_deku)?;
 		debug!(%bits_read, ?header, "read zstandard block header");
 		Ok(header)
-	}
-
-	/// Interact with the reader directly.
-	///
-	/// Only available with the `expose-internals` feature, and only to be used by external
-	/// consumers if they know what they're doing. This is unsafe because it allows you to break the
-	/// internal state of the decoder.
-	#[cfg(feature = "expose-internals")]
-	pub unsafe fn with_reader(&mut self, fun: impl FnOnce(&mut R) -> Result<()>) -> Result<()> {
-		fun(&mut self.reader)
 	}
 
 	/// Read a Zarc header.
@@ -182,7 +158,8 @@ impl<'reader, R: Read + Seek> Decoder<'reader, R> {
 			return Err(ErrorKind::ReadOrderViolation("header cannot be read twice").into());
 		};
 
-		let frame = self.read_skippable_frame(0x0)?;
+		let mut reader = self.reader.open()?;
+		let frame = Self::read_skippable_frame(&mut reader, 0x0)?;
 
 		let mut content = Cursor::new(frame.data);
 		let (bits_read, header) =
@@ -223,9 +200,12 @@ impl<'reader, R: Read + Seek> Decoder<'reader, R> {
 			.into());
 		};
 
-		let _frame_header = self.read_zstandard_frame_header()?;
+		let mut reader = self.reader.open()?;
+		reader.seek(SeekFrom::Start(FILE_MAGIC.len() as _))?;
 
-		let first_block_header = self.read_zstandard_block_header()?;
+		let _frame_header = Self::read_zstandard_frame_header(&mut reader)?;
+
+		let first_block_header = Self::read_zstandard_block_header(&mut reader)?;
 		if first_block_header.block_type != ZstandardBlockType::Raw {
 			return Err(ErrorKind::InvalidUnintendedMagic.into());
 		}
@@ -233,21 +213,24 @@ impl<'reader, R: Read + Seek> Decoder<'reader, R> {
 			return Err(ErrorKind::InvalidUnintendedMagic.into());
 		}
 		let (bits_read, unintended_magic) =
-			ZarcHeader::from_reader((&mut self.reader, 0)).map_err(SimpleError::from_deku)?;
+			ZarcHeader::from_reader((&mut reader, 0)).map_err(SimpleError::from_deku)?;
 		debug!(%bits_read, ?unintended_magic, "read zarc header in unintended magic raw block");
 		if unintended_magic.file_version != file_version.get() {
 			return Err(ErrorKind::MismatchedFileVersion.into());
 		}
 
-		// we could seek to the end of the frame, but we're going to read the trailer
-		// immediately after this anyway so let's not bother
+		// an extra check we could do is store the offset here and then check that no frame of
+		// content starts before it, as that would be frames attempting to read into header space.
+		// but as content frames are only zstandard frames, we achieve the same by instead checking
+		// explicitly for the two known offsets of zarc metadata in zstandard frames, this very one
+		// at constant offset 12 and the directory.
 
 		Ok(())
 	}
 
 	/// Read the Zarc EOF Trailer.
 	///
-	/// This seeks to the end of the reader minus 16 bytes, then reads the EOF trailer frame, then
+	/// This opens a new reader, seeks to the end minus 16 bytes, reads the EOF trailer frame, then
 	/// returns the offset of the start of the Zarc Directory Header (backward from EOF) in bytes.
 	#[cfg_attr(feature = "expose-internals", visibility::make(pub))]
 	#[instrument(level = "debug", skip(self))]
@@ -256,8 +239,9 @@ impl<'reader, R: Read + Seek> Decoder<'reader, R> {
 			return Err(ErrorKind::ReadOrderViolation("trailer cannot be read twice").into());
 		};
 
-		self.reader.seek(SeekFrom::End(-16))?;
-		let trailer = self.read_skippable_frame(0xE)?;
+		let mut reader = self.reader.open()?;
+		reader.seek(SeekFrom::End(-16))?;
+		let trailer = Self::read_skippable_frame(&mut reader, 0xE)?;
 
 		let mut content = Cursor::new(trailer.data);
 		let (bits_read, trailer) =
@@ -277,7 +261,7 @@ impl<'reader, R: Read + Seek> Decoder<'reader, R> {
 
 	/// Read Zarc Directory Header.
 	///
-	/// This reads the Zarc Directory Header, and leaves the cursor at the end of the frame.
+	/// This opens a new reader and reads the Zarc Directory Header.
 	#[cfg_attr(feature = "expose-internals", visibility::make(pub))]
 	#[instrument(level = "debug", skip(self))]
 	fn read_directory_header(&mut self) -> Result<()> {
@@ -299,10 +283,11 @@ impl<'reader, R: Read + Seek> Decoder<'reader, R> {
 			.into());
 		};
 
+		let mut reader = self.reader.open()?;
 		debug!(?offset, "seek to directory header");
-		self.reader.seek(SeekFrom::End(-(offset.get() as i64)))?;
+		reader.seek(SeekFrom::End(-(offset.get() as i64)))?;
 
-		let frame = self.read_skippable_frame(0xF)?;
+		let frame = Self::read_skippable_frame(&mut reader, 0xF)?;
 		let mut content = Cursor::new(frame.data);
 		let (bits_read, directory_header) =
 			ZarcDirectoryHeader::from_reader((&mut content, 0)).map_err(SimpleError::from_deku)?;
@@ -314,7 +299,7 @@ impl<'reader, R: Read + Seek> Decoder<'reader, R> {
 
 		self.directory_header = Some(Rc::new(directory_header));
 
-		let offset = self.reader.stream_position()?;
+		let offset = reader.stream_position()?;
 		debug!(%offset, "cursor is at end of directory header, ie start of directory frame");
 		debug_assert_ne!(offset, 0);
 		self.directory_offset = Some(unsafe {
@@ -325,23 +310,247 @@ impl<'reader, R: Read + Seek> Decoder<'reader, R> {
 		Ok(())
 	}
 
-	/// Perform one step of a stream decompression.
+	/// Read the Zarc Directory.
 	///
-	/// The zstd session must have been properly initialised and any dictionary or parameter loaded,
-	/// and the cursor must either be at the start of a frame, or left where a previous call to this
-	/// method did.
+	/// After this returns, the Zarc file is ready for reading, using the Filemap iterator to sift
+	/// through the available file records and extract them on demand.
+	///
+	/// This has two modes, which are switched internally.
+	///
+	/// ## Streaming
+	///
+	/// If the directory doesn't decompress in one step.
+	///
+	/// This starts uncompressing and reading the Zarc Directory, and stops after the first four
+	/// CBOR fields. This is enough to get the directory version, public key and algorithms, which
+	/// are needed to verify the directory integrity. After checking the signature, decompression is
+	/// resumed, and the directory's digest is verified. While doing so, the frame lookup table is
+	/// constructed and held in memory. This is a map from digest to frame offset and metadata, and
+	/// is used to efficiently seek to a frame when it's needed.
+	///
+	/// ## In-memory
+	///
+	/// If the directory decompresses in one step.
+	///
+	/// In that case, the directory is entirely hashed and decoded from CBOR, then verified, and
+	/// finally stored in the context. The frame lookup table is also constructed, but maps digests
+	/// to indexes in the directory's frame list to avoid duplicating memory.
+	#[cfg_attr(feature = "expose-internals", visibility::make(pub))]
+	#[instrument(level = "debug", skip(self))]
+	fn read_directory(&mut self) -> Result<()> {
+		let Some(offset) = self.directory_offset else {
+			return Err(ErrorKind::ReadOrderViolation(
+				"directory cannot be read before directory header",
+			)
+			.into());
+		};
+		let Some(header) = self.directory_header.as_ref().map(|dh| Rc::clone(dh)) else {
+			return Err(ErrorKind::ReadOrderViolation(
+				"directory cannot be read before directory header",
+			)
+			.into());
+		};
+
+		// start a new decompression session
+		let mut frame = self.read_zstandard_frame(offset.get())?;
+		let data = frame
+			.next()
+			.ok_or(ErrorKind::DirectoryIntegrity("empty directory"))??;
+		if frame.is_done() {
+			drop(frame); // to release borrow
+			debug!("processing entire directory in memory");
+			let directory: ZarcDirectory = minicbor::decode(&data)?;
+
+			trace!("verify directory signature");
+			if !directory.signature_scheme.verify_data(
+				&directory.public_key,
+				&header.sig,
+				header.hash.as_slice(),
+			) {
+				return Err(ErrorKind::DirectoryIntegrity("signature").into());
+			}
+
+			trace!("verify directory hash");
+			if !directory.hash_algorithm.verify_data(&header.hash, &data) {
+				return Err(ErrorKind::DirectoryIntegrity("digest").into());
+			}
+
+			trace!(frames=%directory.framelist.len(), "build frame lookup table");
+			for frame in directory.framelist.iter() {
+				if frame.version_added.is_some() {
+					todo!("multi-version archive");
+				}
+
+				if !directory.signature_scheme.verify_data(
+					&directory.public_key,
+					&frame.signature,
+					frame.frame_hash.as_slice(),
+				) {
+					return Err(ErrorKind::DirectoryIntegrity("frame signature").into());
+				}
+
+				self.frame_lookup.insert(
+					frame.frame_hash.clone(),
+					FrameLookupEntry {
+						offset: frame.offset,
+						uncompressed_size: frame.uncompressed_size,
+					},
+				);
+			}
+			trace!(frames=%self.frame_lookup.len(), "verified and built frame lookup table");
+
+			self.directory = Some(Rc::new(directory));
+		} else {
+			debug!("directory spans more than one block, streaming it");
+			todo!("streaming directory decode")
+		}
+
+		Ok(())
+	}
+
+	/// Prepare a Zarc for reading.
+	///
+	/// This reads all the Zarc headers and the Zarc directory, verifies the integrity of the
+	/// archive except for the actual file content, etc. Once this returns, the Zarc file is ready
+	/// for reading, using the filemap iterator to sift through the available file records and
+	/// extract them on demand.
+	pub fn prepare(&mut self) -> Result<()> {
+		self.read_header()?;
+		self.read_unintended_magic()?;
+
+		self.read_eof_trailer()?;
+		self.read_directory_header()?;
+		self.read_directory()?;
+
+		Ok(())
+	}
+
+	/// Iterate through the filemap.
+	///
+	/// TODO: Really this should be an iterator.
+	pub fn with_filemap(&self, fun: impl Fn(&FilemapEntry)) {
+		if let Some(directory) = self.directory.as_ref().map(|dh| Rc::clone(dh)) {
+			for entry in directory.filemap.iter() {
+				fun(entry);
+			}
+		} else {
+			todo!("streaming filemap");
+		}
+	}
+
+	/// Read a Zstandard frame, decompressing it on demand.
+	///
+	/// This opens a new reader, seeks to the position given, and returns an iterator of chunks of
+	/// bytes. Each call to the iterator decompresses some data and returns it, until the frame is
+	/// exhausted.
+	#[cfg_attr(feature = "expose-internals", visibility::make(pub))]
+	#[instrument(level = "debug", skip(self))]
+	fn read_zstandard_frame(&self, offset: u64) -> Result<ZstdFrameIterator<'_, R::Reader>> {
+		let mut reader = self.reader.open()?;
+		let zstd = DCtx::try_create().ok_or(ErrorKind::ZstdInit)?;
+		// TODO method to create zstd context with the parameters saved against Decoder
+
+		debug!(%offset, "seek to frame");
+		reader.seek(SeekFrom::Start(offset))?;
+
+		Ok(ZstdFrameIterator::new(reader, zstd, offset))
+	}
+
+	/// Decompress a content frame by digest.
+	///
+	/// This returns an iterator of chunks of bytes. Each call to the iterator decompresses some
+	/// data and returns it, until the frame is exhausted.
+	pub fn read_content_frame(
+		&self,
+		digest: &Digest,
+	) -> Result<Option<FrameIterator<'_, R::Reader>>> {
+		let Some(entry) = self.frame_lookup.get(digest) else {
+			return Ok(None);
+		};
+
+		if entry.offset == 12 {
+			// this is the unintended magic frame, which is not a content frame
+			return Ok(None);
+		}
+
+		let Some(directory_offset) = self.directory_offset else {
+			return Err(ErrorKind::ReadOrderViolation(
+				"content frames cannot be read before directory header",
+			)
+			.into());
+		};
+		if entry.offset == directory_offset.get() {
+			// this is the directory frame, which is not a content frame
+			return Ok(None);
+		}
+
+		Ok(Some(FrameIterator::new(
+			self.read_zstandard_frame(entry.offset)?,
+			digest.clone(),
+			entry.uncompressed_size,
+		)))
+	}
+}
+
+/// Frame lookup table entry.
+#[derive(Clone, Copy, Debug)]
+pub struct FrameLookupEntry {
+	/// Frame offset.
+	pub offset: u64,
+
+	/// Uncompressed payload size in bytes.
+	pub uncompressed_size: u64,
+}
+
+/// Iterator over a zstandard frame's chunks.
+///
+/// This is returned by [`Decoder::read_zstandard_frame()`].
+///
+/// Each call to the iterator decompresses some data and returns it, until the frame is exhausted.
+/// It also computes the frame's digest as it goes, so you can check it against the one you used to
+/// request the frame.
+#[cfg_attr(feature = "expose-internals", visibility::make(pub))]
+pub(crate) struct ZstdFrameIterator<'zstd, R> {
+	reader: R,
+	zstd: DCtx<'zstd>,
+	start_offset: u64,
+	done: bool,
+}
+
+impl<R: fmt::Debug> fmt::Debug for ZstdFrameIterator<'_, R> {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		f.debug_struct("ZstdFrameIterator")
+			.field("reader", &self.reader)
+			.field("zstd", &"zstd-safe decompression context")
+			.field("start_offset", &self.start_offset)
+			.field("done", &self.done)
+			.finish()
+	}
+}
+
+impl<'zstd, R> ZstdFrameIterator<'zstd, R> {
+	/// Return `true` if the iterator is done, without advancing it.
+	pub fn is_done(&self) -> bool {
+		self.done
+	}
+}
+
+impl<'zstd, R: Read + Seek> ZstdFrameIterator<'zstd, R> {
+	pub(crate) fn new(reader: R, zstd: DCtx<'zstd>, start_offset: u64) -> Self {
+		Self {
+			reader,
+			zstd,
+			start_offset,
+			done: false,
+		}
+	}
+
+	/// Perform one step of a stream decompression.
 	///
 	/// This cursor is left at wherever the decompression stopped, which may be in the middle of a
 	/// block or frame; the next call to this method will continue from there.
 	///
 	/// Returns the data that was decompressed and a boolean to indicate if the frame is done.
-	///
-	/// As with [`Self::with_reader`], this is unsafe as it can break the decoder's internal state.
-	#[cfg(feature = "expose-internals")]
-	pub unsafe fn manually_decompress_step(&mut self) -> Result<(Vec<u8>, bool)> {
-		self.decompress_step()
-	}
-
 	#[instrument(level = "trace", skip(self))]
 	fn decompress_step(&mut self) -> Result<(Vec<u8>, bool)> {
 		let input_size = DCtx::in_size().max(1024);
@@ -407,235 +616,55 @@ impl<'reader, R: Read + Seek> Decoder<'reader, R> {
 
 		Ok((output_buf, input_hint == 0))
 	}
+}
 
-	/// Read the Zarc Directory.
-	///
-	/// After this returns, the Zarc file is ready for reading, using the Filemap iterator to sift
-	/// through the available file records and extract them on demand.
-	///
-	/// This has two modes, which are switched internally.
-	///
-	/// ## Streaming
-	///
-	/// If the directory doesn't decompress in one step.
-	///
-	/// This starts uncompressing and reading the Zarc Directory, and stops after the first four
-	/// CBOR fields. This is enough to get the directory version, public key and algorithms, which
-	/// are needed to verify the directory integrity. After checking the signature, decompression is
-	/// resumed, and the directory's digest is verified. While doing so, the frame lookup table is
-	/// constructed and held in memory. This is a map from digest to frame offset and metadata, and
-	/// is used to efficiently seek to a frame when it's needed.
-	///
-	/// ## In-memory
-	///
-	/// If the directory decompresses in one step.
-	///
-	/// In that case, the directory is entirely hashed and decoded from CBOR, then verified, and
-	/// finally stored in the context. The frame lookup table is also constructed, but maps digests
-	/// to indexes in the directory's frame list to avoid duplicating memory.
-	#[cfg_attr(feature = "expose-internals", visibility::make(pub))]
-	#[instrument(level = "debug", skip(self))]
-	fn read_directory(&mut self) -> Result<()> {
-		let Some(offset) = self.directory_offset else {
-			return Err(ErrorKind::ReadOrderViolation(
-				"directory cannot be read before directory header",
-			)
-			.into());
-		};
-		let Some(header) = self.directory_header.as_ref().map(|dh| Rc::clone(dh)) else {
-			return Err(ErrorKind::ReadOrderViolation(
-				"directory cannot be read before directory header",
-			)
-			.into());
+impl<'zstd, R: Read + Seek> Iterator for ZstdFrameIterator<'zstd, R> {
+	type Item = Result<Vec<u8>>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		if self.done {
+			return None;
+		}
+
+		let (data, done) = match self.decompress_step() {
+			Ok(ok) => ok,
+			Err(err) => return Some(Err(err)),
 		};
 
-		// start a new decompression session
-		self.zstd.init().map_err(error::zstd)?;
-		self.reader.seek(SeekFrom::Start(offset.get()))?;
-
-		let (data, done) = self.decompress_step()?;
 		if done {
-			debug!("processing entire directory in memory");
-			let directory: ZarcDirectory = minicbor::decode(&data)?;
-
-			trace!("verify directory signature");
-			if !directory.signature_scheme.verify_data(
-				&directory.public_key,
-				&header.sig,
-				header.hash.as_slice(),
-			) {
-				return Err(ErrorKind::DirectoryIntegrity("signature").into());
-			}
-
-			trace!("verify directory hash");
-			if !directory.hash_algorithm.verify_data(&header.hash, &data) {
-				return Err(ErrorKind::DirectoryIntegrity("digest").into());
-			}
-
-			trace!(frames=%directory.framelist.len(), "build frame lookup table");
-			for frame in directory.framelist.iter() {
-				if frame.version_added.is_some() {
-					todo!("multi-version archive");
-				}
-
-				if !directory.signature_scheme.verify_data(
-					&directory.public_key,
-					&frame.signature,
-					frame.frame_hash.as_slice(),
-				) {
-					return Err(ErrorKind::DirectoryIntegrity("frame signature").into());
-				}
-
-				self.frame_lookup.insert(
-					frame.frame_hash.clone(),
-					FrameLookupEntry {
-						offset: frame.offset,
-						uncompressed_size: frame.uncompressed_size,
-					},
-				);
-			}
-			trace!(frames=%self.frame_lookup.len(), "verified and built frame lookup table");
-
-			self.directory = Some(Rc::new(directory));
-		} else {
-			debug!("directory spans more than one block, streaming it");
-			todo!("streaming directory decode")
+			self.done = true;
 		}
 
-		Ok(())
-	}
-
-	/// Prepare a Zarc for reading.
-	///
-	/// This reads all the Zarc headers and the Zarc directory, verifies the integrity of the
-	/// archive except for the actual file content, etc. Once this returns, the Zarc file is ready
-	/// for reading, using the filemap iterator to sift through the available file records and
-	/// extract them on demand.
-	pub fn prepare(&mut self) -> Result<()> {
-		self.read_header()?;
-		self.read_unintended_magic()?;
-		self.read_eof_trailer()?;
-		self.read_directory_header()?;
-		self.read_directory()?;
-
-		Ok(())
-	}
-
-	/// Iterate through the filemap.
-	///
-	/// TODO: Really this should be an iterator but I'm not smart enough to write it.
-	pub fn with_filemap(&mut self, fun: impl Fn(&FilemapEntry)) -> Result<()> {
-		self.traverse_filemap(|entry| {
-			fun(entry);
-			Ok(ControlFlow::Continue(()))
-		})
-		.map(drop)
-	}
-
-	/// Lookup a file by path.
-	///
-	/// This is O(n) on the number of files in the archive, so it's not recommended to use it
-	/// repeatedly. Use [`Self::with_filemap()`] instead.
-	pub fn lookup_path(&mut self, path: impl AsRef<Path>) -> Result<Option<FilemapEntry>> {
-		let path = path.as_ref();
-		self.traverse_filemap(|entry| {
-			if entry.name.to_path() == path {
-				Ok(ControlFlow::Break(entry))
-			} else {
-				Ok(ControlFlow::Continue(()))
-			}
-		})
-	}
-
-	/// Gather all the files in the archive.
-	pub fn filemap(&mut self) -> Result<Vec<FilemapEntry>> {
-		let mut filemap = Vec::new();
-		self.traverse_filemap(|entry| {
-			filemap.push(entry.clone());
-			Ok(ControlFlow::Continue(()))
-		})?;
-		Ok(filemap)
-	}
-
-	fn traverse_filemap(
-		&mut self,
-		mut fun: impl FnMut(&FilemapEntry) -> Result<ControlFlow<&FilemapEntry>>,
-	) -> Result<Option<FilemapEntry>> {
-		if let Some(directory) = self.directory.as_ref().map(|dh| Rc::clone(dh)) {
-			for entry in directory.filemap.iter() {
-				match fun(entry)? {
-					ControlFlow::Continue(()) => (),
-					ControlFlow::Break(entry) => return Ok(Some(entry.clone())),
-				}
-			}
-		} else {
-			todo!("streaming filemap");
-		}
-
-		Ok(None)
-	}
-
-	/// Decompress a frame by digest.
-	///
-	/// This returns an iterator of chunks of bytes. Each call to the iterator decompresses some
-	/// data and returns it, until the frame is exhausted.
-	pub fn decompress_frame(
-		&mut self,
-		digest: &Digest,
-	) -> Result<Option<FrameIterator<'_, 'reader, R>>> {
-		let Some(entry) = self.frame_lookup.get(digest) else {
-			return Ok(None);
-		};
-
-		let offset = entry.offset;
-		self.reader.seek(SeekFrom::Start(offset))?;
-
-		Ok(Some(FrameIterator::new(
-			self,
-			digest.clone(),
-			entry.uncompressed_size,
-		)))
+		Some(Ok(data))
 	}
 }
 
-/// Frame lookup table entry.
-#[derive(Clone, Copy, Debug)]
-pub struct FrameLookupEntry {
-	/// Frame offset.
-	pub offset: u64,
-
-	/// Uncompressed payload size in bytes.
-	pub uncompressed_size: u64,
-}
-
-/// Iterator over a frame's chunks.
+/// Iterator over a Zarc content frame's chunks.
 ///
-/// This is returned by [`Decoder::decompress_frame()`].
+/// This is returned by [`Decoder::read_content_frame()`].
 ///
 /// Each call to the iterator decompresses some data and returns it, until the frame is exhausted.
 /// It also computes the frame's digest as it goes, so you can check it against the one you used to
 /// request the frame.
 #[derive(Debug)]
-pub struct FrameIterator<'a, 'r, R> {
-	decoder: &'a mut Decoder<'r, R>,
+pub struct FrameIterator<'zstd, R> {
+	framer: ZstdFrameIterator<'zstd, R>,
 	hasher: blake3::Hasher,
 	digest: Digest,
-	done: bool,
 	uncompressed_size: u64,
 	uncompressed_read: u64,
 }
 
-impl<'a, 'r, R> FrameIterator<'a, 'r, R> {
+impl<'zstd, R> FrameIterator<'zstd, R> {
 	pub(crate) fn new(
-		decoder: &'a mut Decoder<'r, R>,
+		framer: ZstdFrameIterator<'zstd, R>,
 		digest: Digest,
 		uncompressed_size: u64,
 	) -> Self {
 		Self {
-			decoder,
+			framer,
 			hasher: blake3::Hasher::new(),
 			digest,
-			done: false,
 			uncompressed_size,
 			uncompressed_read: 0,
 		}
@@ -656,7 +685,7 @@ impl<'a, 'r, R> FrameIterator<'a, 'r, R> {
 	///
 	/// Returns None if the iterator isn't yet done.
 	pub fn digest(&self) -> Option<Digest> {
-		if self.done {
+		if self.framer.is_done() {
 			Some(Digest(self.hasher.finalize().as_bytes().to_vec()))
 		} else {
 			None
@@ -671,26 +700,17 @@ impl<'a, 'r, R> FrameIterator<'a, 'r, R> {
 	}
 }
 
-impl<'a, 'r, R: Read + Seek> Iterator for FrameIterator<'a, 'r, R> {
+impl<'zstd, R: Read + Seek> Iterator for FrameIterator<'zstd, R> {
 	type Item = Result<Vec<u8>>;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		if self.done {
-			return None;
+		let data = self.framer.next()?;
+
+		if let Ok(data) = &data {
+			self.uncompressed_read += data.len() as u64;
+			self.hasher.update(&data);
 		}
 
-		let (data, done) = match self.decoder.decompress_step() {
-			Ok(ok) => ok,
-			Err(err) => return Some(Err(err)),
-		};
-
-		self.uncompressed_read += data.len() as u64;
-		self.hasher.update(&data);
-
-		if done {
-			self.done = true;
-		}
-
-		Some(Ok(data))
+		Some(data)
 	}
 }

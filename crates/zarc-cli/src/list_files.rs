@@ -1,7 +1,6 @@
-use std::{fs::File, path::PathBuf};
+use std::path::PathBuf;
 
 use clap::{Parser, ValueHint};
-use miette::IntoDiagnostic;
 use regex::Regex;
 use tracing::info;
 use zarc::{decode::Decoder, format::SpecialFileKind};
@@ -33,14 +32,14 @@ pub struct ListFilesArgs {
 }
 
 pub(crate) fn list_files(args: ListFilesArgs) -> miette::Result<()> {
-	info!(path=?args.input, "open input file");
-	let mut file = File::open(args.input).into_diagnostic()?;
-
 	info!("initialise decoder");
-	let mut zarc = Decoder::new(&mut file)?;
+	let mut zarc = Decoder::new(args.input)?;
 
 	info!("prepare and check the file");
 	zarc.prepare()?;
+
+	// drop the mutability once we don't need it
+	let zarc = zarc;
 
 	info!("list files");
 	zarc.with_filemap(|entry| {
@@ -64,7 +63,7 @@ pub(crate) fn list_files(args: ListFilesArgs) -> miette::Result<()> {
 		}
 
 		println!("");
-	})?;
+	});
 
 	Ok(())
 }
