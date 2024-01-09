@@ -580,9 +580,9 @@ impl<'reader, R: Read + Seek> Decoder<'reader, R> {
 	/// This returns an iterator of chunks of bytes. Each call to the iterator decompresses some
 	/// data and returns it, until the frame is exhausted.
 	pub fn decompress_frame(
-		&'reader mut self,
+		&mut self,
 		digest: &Digest,
-	) -> Result<Option<FrameIterator<'reader, R>>> {
+	) -> Result<Option<FrameIterator<'_, 'reader, R>>> {
 		let Some(entry) = self.frame_lookup.get(digest) else {
 			return Ok(None);
 		};
@@ -616,8 +616,8 @@ pub struct FrameLookupEntry {
 /// It also computes the frame's digest as it goes, so you can check it against the one you used to
 /// request the frame.
 #[derive(Debug)]
-pub struct FrameIterator<'a, R> {
-	decoder: &'a mut Decoder<'a, R>,
+pub struct FrameIterator<'a, 'r, R> {
+	decoder: &'a mut Decoder<'r, R>,
 	hasher: blake3::Hasher,
 	digest: Digest,
 	done: bool,
@@ -625,9 +625,9 @@ pub struct FrameIterator<'a, R> {
 	uncompressed_read: u64,
 }
 
-impl<'a, R> FrameIterator<'a, R> {
+impl<'a, 'r, R> FrameIterator<'a, 'r, R> {
 	pub(crate) fn new(
-		decoder: &'a mut Decoder<'a, R>,
+		decoder: &'a mut Decoder<'r, R>,
 		digest: Digest,
 		uncompressed_size: u64,
 	) -> Self {
@@ -671,7 +671,7 @@ impl<'a, R> FrameIterator<'a, R> {
 	}
 }
 
-impl<'a, R: Read + Seek> Iterator for FrameIterator<'a, R> {
+impl<'a, 'r, R: Read + Seek> Iterator for FrameIterator<'a, 'r, R> {
 	type Item = Result<Vec<u8>>;
 
 	fn next(&mut self) -> Option<Self::Item> {
