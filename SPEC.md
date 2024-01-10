@@ -148,7 +148,7 @@ A directory that is not this exact length MUST be considered corrupt.
 This is a Zstandard frame.
 
 It contains a stream of length-prefixed [CBOR](https://cbor.io)-encoded structures.
-The first structure four structures MUST be Types `0` through `3` (in this order).
+The first four structures MUST be Types `0` through `3` (in this order).
 
 Each structure is a heterogenous array of the form:
 
@@ -168,13 +168,13 @@ Structures of a same Type are NOT required to be next to each other.
 
 Implementations MUST ignore Types they do not recognise.
 
-### `0`: Zarc Directory Version
+### Type `0`: Zarc Directory Version
 
 _Integer._ **Mandatory, first-wins.**
 
 This must be the value `1`.
 
-### `1`: Hash Algorithm
+### Type `1`: Hash Algorithm
 
 _Integer._ **Mandatory, first-wins.**
 
@@ -185,7 +185,7 @@ This MUST be one of the following values:
 
 Implementations MAY offer an optional "insecure" mode which ignores hash mismatches or unknown algorithms.
 
-### `2`: Signature Algorithm
+### Type `2`: Signature Algorithm
 
 _Integer._ **Mandatory, first-wins.**
 
@@ -196,25 +196,25 @@ This MUST be one of the following values:
 
 Implementations MAY offer an optional "insecure" mode which ignores signature mismatches or unknown algorithms.
 
-### `3`: Signature Public Key
+### Type `3`: Signature Public Key
 
 _Byte string._ **Mandatory, first-wins.**
 
 Public key for the selected signature scheme.
 
-#### `4`: Written At
+### Type `4`: Written At
 
 _Timestamp or DateTime._ **Mandatory, last-wins.**
 
 When this archive was created.
 
-### `10`: User Metadata
+### Type `10`: User Metadata
 
 _Pair: [text string, (boolean or text or byte string)]._ **Optional, collect-up.**
 
 Arbitrary user-provided metadata for the whole Zarc file.
 
-### `13`: Prior Versions
+### Type `13`: Prior Versions
 
 _Pair: [U16, Map: unsigned integer keys -> CBOR]._ **Optional, collect-up.**
 
@@ -227,49 +227,47 @@ The first item in the pair is a U16 _prior version index_, which can be referred
 These indices MUST be unique.
 The second item is a map described below:
 
-#### `0`: Zarc Directory Version
+#### Key `0`: Zarc Directory Version
 
 _Integer._ **Optional.**
 
 Version of the directory if the current version is different from this one.
 
-#### `1`: Hash Algorithm
+#### Key `1`: Hash Algorithm
 
 _Integer._ **Mandatory.**
 
 Hash algorithm (see above for list) of this version.
 
-#### `2`: Signature Algorithm
+#### Key `2`: Signature Algorithm
 
 _Integer._ **Mandatory.**
 
 Signature algorithm (see above for list) of this version.
 
-#### `3`: Signature Public Key
+#### Key `3`: Signature Public Key
 
 _Byte string._ **Mandatory.**
 
 Public key of this version.
 
-#### `4`: Written At
+#### Key `4`: Written At
 
 _Timestamp or DateTime._ **Mandatory.**
 
 When this version was created.
 
-#### `10`: User Metadata
+#### Key `10`: User Metadata
 
 _Map: text string keys -> boolean or text or byte string._ **Optional.**
 
 User metadata of this version.
 
-### `20`: Filemap
+### Type `20`: Files
 
 _Map: unsigned integer keys -> CBOR._ **Mandatory, collect-up.**
 
-Each item contains:
-
-#### `0`: Name
+#### Key `0`: Name
 
 _Array of: text string or byte string._ **Mandatory.**
 
@@ -297,7 +295,7 @@ Pathnames do not encode whether a path is absolute or relative: all paths inside
 It is possible to have several identical pathname in a Zarc Directory.
 Implementations SHOULD provide an option to use the first or last or other selection criteria, but MUST default to preferring the last of a set of identical pathnames.
 
-#### `1`: Hash of Frame
+#### Key `1`: Hash of Frame
 
 _Byte string._ **Conditional.**
 
@@ -310,7 +308,7 @@ The algorithm of the hash is described by the **Hash Algorithm** field above.
 
 This may be absent for some special files (described later).
 
-#### `2`: File Is Readonly
+#### Key `2`: File Is Readonly
 
 _Boolean._ **Optional.**
 
@@ -318,7 +316,7 @@ If `true`, the file is marked read-only.
 
 This is a filesystem mode only and has no bearing on Zarc's handling.
 
-#### `3`: POSIX File Mode
+#### Key `3`: POSIX File Mode
 
 _Unsigned integer._ **Optional.**
 
@@ -326,7 +324,7 @@ Unix mode bits as an unsigned 32-bit integer.
 
 If this is not set, implementations SHOULD use a default mode as appropriate.
 
-#### `4`: POSIX File Owner
+#### Key `4`: POSIX File Owner
 
 _Tuple (encoded as an array)._ **Optional.**
 
@@ -343,7 +341,7 @@ There SHOULD NOT be more than one unsigned integer; if there are, the last value
 Implementations SHOULD prefer the name to the ID if there is an existing user named thus on the system with a different ID.
 Implementations SHOULD prefer to encode IDs as 32-bit unsigned integers, but MUST accept 8-bit, 16-bit, and 64-bit unsigned integers as well.
 
-#### `5`: POSIX File Group
+#### Key `5`: POSIX File Group
 
 _Tuple (encoded as an array)._ **Optional.**
 
@@ -358,13 +356,13 @@ There SHOULD NOT be both _Text string_ and _Byte string_ values. If there is, th
 
 Implementations SHOULD prefer the name to the ID if there is an existing group named thus on the system with a different ID.
 
-#### `10`: File User Metadata
+#### Key `10`: File User Metadata
 
 _Map: text string keys -> boolean or text or byte string._ **Optional.**
 
 Arbitrary user-provided metadata for this file entry.
 
-#### `11`: File Attributes
+#### Key `11`: File Attributes
 
 _Map: text string keys -> boolean or text or byte string._ **Optional.**
 
@@ -372,7 +370,7 @@ A map of values (typically boolean flags) which keys SHOULD correspond to [file 
 
 Implementations MAY ignore attributes if obtaining or setting them is impossible or impractical.
 
-#### `12`: Extended File Attributes
+#### Key `12`: Extended File Attributes
 
 _Map: text string keys -> boolean or text or byte string._ **Optional.**
 
@@ -383,13 +381,13 @@ Zarc imposes no restriction on the format of attribute names, nor on the content
 Implementations MAY ignore extended attributes if obtaining or setting them is impossible or impractical.
 On Linux, implementations MAY assume a `user` namespace for unprefixed keys.
 
-#### `13`: Version Added
+#### Key `13`: Version Added
 
 _Integer._ **Optional.**
 
 If this file entry was added by another version than current, this is the index of that version.
 
-#### `20`: File Timestamps
+#### Key `20`: File Timestamps
 
 _Map: unsigned integer keys -> timestamp._ **Optional.**
 
@@ -406,7 +404,7 @@ Timestamps can be stored in either:
 
 > **Non-normative implementation note:** the Zarc reference implementation _accepts_ all formats for a timestamp, but always _writes_ RFC3339 text string datetimes.
 
-#### `30`: Special File Types
+#### Key `30`: Special File Types
 
 _Pair: [unsigned integer, (pathname)?]._ **Optional.**
 
@@ -443,15 +441,13 @@ Pathnames (as the conditional second array item) are either:
 
 The second form is preferred, for portability.
 
-### `21`: Framelist
+### Type `21`: Frames
 
 _Map: unsigned integer keys -> CBOR._ **Mandatory, collect-up.**
 
-Items MUST appear in offset order.
+Structures of this type SHOULD appear in offset order.
 
-Each item contains:
-
-#### `0`: Frame Offset
+#### Key `0`: Frame Offset
 
 _Integer._ **Mandatory.**
 
@@ -459,7 +455,7 @@ The offset in bytes from the start of the Zarc file to the first byte of the Zst
 
 There MUST NOT be duplicate Frame Offsets in the Framelist.
 
-#### `1`: Frame Content Hash
+#### Key `1`: Frame Content Hash
 
 _Byte string._ **Mandatory.**
 
@@ -467,7 +463,7 @@ The digest of the frame contents using the algorithm defined at the top level.
 
 Implementations MUST check that frame contents match this digest (unless "insecure" mode is used).
 
-#### `2`: Frame Content Signature
+#### Key `2`: Frame Content Signature
 
 _Byte string._ **Mandatory.**
 
@@ -475,7 +471,7 @@ A signature computed over the Frame Content Hash using the algorithm defined at 
 
 Implementations MUST check that the signature is valid (unless "insecure" mode is used).
 
-#### `3`: Uncompressed Content Length
+#### Key `3`: Uncompressed Content Length
 
 _Integer._ **Mandatory.**
 
@@ -488,7 +484,7 @@ This can be used to e.g.:
 - to preallocate storage before unpacking;
 - estimate the uncompressed total size of the archive.
 
-#### `13`: Version Added
+#### Key `13`: Version Added
 
 _Integer._ **Optional.**
 
