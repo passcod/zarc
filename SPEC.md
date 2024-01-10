@@ -117,25 +117,44 @@ This is a Skippable frame with magic nibble = F.
 
 It contains:
 
-| **`Zarc_Magic`** | **`Zarc_File_Version`** | **`Zarc_Directory_Hash_Length`** | **`Zarc_Directory_Hash`** | **`Zarc_Directory_Sig_Length`** | **`Zarc_Directory_Sig`** | **`Zarc_Directory_Uncompressed_Length`** |
-|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| 3 bytes | 1 byte | 2 bytes | `Zarc_Directory_Hash_Length` bytes | 2 bytes | `Zarc_Directory_Sig_Length` bytes | 8 bytes |
+| **`Magic`** | _reserved_ **`File Version`** | **`Directory Version`** | **`Digest Type`** | **`Signature Type`** | **`Uncompressed Length`** | **`Public Key`** **`Digest`** | **`Signature`** |
+|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| 3 bytes | 1 byte | U8 | U8 | U8 | U8 | LE U64 | _n_ bytes | _n_ bytes | _n_ bytes |
 
-### `Zarc_Magic` and `Zarc_File_Version`
+### `Magic` and `File Version`
 
 These must be the same as the values in the Zarc Header.
 
-### `Zarc_Directory_Hash` (length-prefixed)
+### `Directory Version`
+
+This must be `1`.
+
+### `Digest` (type- and length-prefixed)
 
 This is the digest of the directory contents.
-The algorithm of the digest is defined in the directory structure.
+The `Digest Type` field defines the algorithm and length of the digest:
 
-### `Zarc_Directory_Sig` (length-prefixed)
+- `0`: not used. This value must not appear.
+- `1`: [BLAKE3](https://github.com/BLAKE3-team/BLAKE3) hash function, 32-byte digests.
 
-This is a signature computed over the `Zarc_Directory_Hash` digest.
-The algorithm and public key of the signature are defined in the directory structure.
+Implementations MAY offer an optional "insecure" mode which ignores digest mismatches or unknown algorithms.
 
-### `Zarc_Directory_Uncompressed_Length`
+### `Signature` (type- and length-prefixed)
+
+This is a signature computed over the `Digest`.
+The `Signature Type` field defines the signature scheme and lengths of the public key and signature:
+
+- `0`: not used. This value must not appear.
+- `1`: [Ed25519](https://en.wikipedia.org/wiki/EdDSA#Ed25519) signature scheme, 32-byte public key, 64-byte signature.
+
+Implementations MAY offer an optional "insecure" mode which ignores signature mismatches or unknown algorithms.
+
+### `Public Key` (length-prefixed)
+
+This is the public or verifying key.
+The format and algorithm is determined by the signature type.
+
+### `Directory Uncompressed Length`
 
 This is the uncompressed length of the Zarc Directory structure.
 
@@ -147,14 +166,11 @@ A directory that is not this exact length MUST be considered corrupt.
 
 This is a Zstandard frame.
 
-It contains a stream of length-prefixed [CBOR](https://cbor.io)-encoded structures.
-The first four structures MUST be Types `0` through `3` (in this order).
+It contains a stream of length-prefixed type-tagged [CBOR](https://cbor.io)-encoded structures.
 
-Each structure is a heterogenous array of the form:
-
-| **`Length`** | **`Type`** | **`Payload`** |
+| **`Type`** | **`Length of Payload`** | **`Payload`** |
 |:-:|:-:|:-:|
-| u32 | unsigned integer | CBOR |
+| little-endian 16-bit unsigned | little-endian 32-bit unsigned | CBOR |
 
 Types are described below, along with their integer and payload structure.
 Types can behave in one of three ways when more than one of them is in the directory:
@@ -164,45 +180,28 @@ Types can behave in one of three ways when more than one of them is in the direc
   It is implementation-defined what these collections are, e.g. lists or trees or hashmaps.
   Order is insignificant unless stated.
 
+The first structure MUST be Type `1`.
 Structures of a same Type are NOT required to be next to each other.
 
+> **Non-normative implementation note:** If such control is possible, an implementation may consider writing the Type `1` structure as a `Raw` (uncompressed) block, to make it possible to verify that it matches the header without starting a decompression session.
+
+Types `0` through `1023` are for core Zarc types in this spec and future versions of this spec.
+Types `32768` through `65535` are private use and may be used freely for implementation- or user-defined semantics.
+All other types are reserved.
 Implementations MUST ignore Types they do not recognise.
 
-### Type `0`: Zarc Directory Version
-
-_Integer._ **Mandatory, first-wins.**
-
-This must be the value `1`.
-
-### Type `1`: Hash Algorithm
-
-_Integer._ **Mandatory, first-wins.**
-
-This MUST be one of the following values:
-
-- `0`: not used. This value must not appear.
-- `1`: [BLAKE3](https://github.com/BLAKE3-team/BLAKE3) hash function.
-
-Implementations MAY offer an optional "insecure" mode which ignores hash mismatches or unknown algorithms.
-
-### Type `2`: Signature Algorithm
-
-_Integer._ **Mandatory, first-wins.**
-
-This MUST be one of the following values:
-
-- `0`: not used. This value must not appear.
-- `1`: [Ed25519](https://en.wikipedia.org/wiki/EdDSA#Ed25519) signature scheme.
-
-Implementations MAY offer an optional "insecure" mode which ignores signature mismatches or unknown algorithms.
-
-### Type `3`: Signature Public Key
+### Type `1`: Meta
 
 _Byte string._ **Mandatory, first-wins.**
 
-Public key for the selected signature scheme.
+This must be the same as the Zarc Directory Header structure, with the `Digest` and `Signature` fields all zeros.
 
-### Type `4`: Written At
+> **Non-normative implementation note:** The purpose of this Type is to include the Public Key and Signature/Digest algorithms in the stream of data that is integrity-checked.
+> As all the information is available in the header, and the two zeroed fields are the last ones, parsing the structure is not necessary, and an implementation may prefer to byte-for-byte check against a saved copy of the first _n_ bytes of the header, or some other method instead of parsing.
+
+If there is a first block of type `Raw` in this frame, and it is at least as long as the Zarc Directory Header structure, an implementation MAY verify that it matches the header before starting a decompression session to obtain it via Zstandard.
+
+### Type `2`: Written At
 
 _Timestamp or DateTime._ **Mandatory, last-wins.**
 
@@ -216,42 +215,28 @@ Arbitrary user-provided metadata for the whole Zarc file.
 
 ### Type `13`: Prior Versions
 
-_Pair: [U16, Map: unsigned integer keys -> CBOR]._ **Optional, collect-up.**
+_Map: unsigned integer keys -> CBOR._ **Optional, collect-up.**
 
 If this archive was appended to, these structures contains information about the previous versions of the directory.
 Constituent structures SHOULD be in reverse-chronological order, with the most recent prior version first.
 
 A maximum of 65536 prior versions can be stored, though for practical purposes implementations SHOULD restrict this to a much lower number when packing.
 
-The first item in the pair is a U16 _prior version index_, which can be referred to by file and frame entries.
-These indices MUST be unique.
-The second item is a map described below:
+#### Key `0`: Index
 
-#### Key `0`: Zarc Directory Version
+_Non-zero unsigned integer._ **Mandatory.**
 
-_Integer._ **Optional.**
+The index of this prior version.
+This is used in Frame and File types as the `Version Added` field.
+Index `0` is implicitely the current version, and thus MUST NOT appear here.
 
-Version of the directory if the current version is different from this one.
-
-#### Key `1`: Hash Algorithm
-
-_Integer._ **Mandatory.**
-
-Hash algorithm (see above for list) of this version.
-
-#### Key `2`: Signature Algorithm
-
-_Integer._ **Mandatory.**
-
-Signature algorithm (see above for list) of this version.
-
-#### Key `3`: Signature Public Key
+#### Key `1`: Meta
 
 _Byte string._ **Mandatory.**
 
-Public key of this version.
+The content of the Zarc Directory Header of that version.
 
-#### Key `4`: Written At
+#### Key `2`: Written At
 
 _Timestamp or DateTime._ **Mandatory.**
 
@@ -308,13 +293,22 @@ The algorithm of the hash is described by the **Hash Algorithm** field above.
 
 This may be absent for some special files (described later).
 
-#### Key `2`: File Is Readonly
+#### Key `2`: File Timestamps
 
-_Boolean._ **Optional.**
+_Map: unsigned integer keys -> timestamp._ **Optional.**
 
-If `true`, the file is marked read-only.
+Timestamps associated with this file. Any of:
 
-This is a filesystem mode only and has no bearing on Zarc's handling.
+- `0`: time the file was stored in this Zarc
+- `1`: ctime or file creation time
+- `2`: mtime or file modification time
+- `3`: atime or file access time — this SHOULD be the access time prior to the Zarc tool reading the file
+
+Timestamps can be stored in either:
+- [RFC3339 in _text string_ with semantic tag `0`](https://www.rfc-editor.org/rfc/rfc8949.html#name-standard-date-time-string)
+- [seconds from epoch as unsigned or negative integer, or binary64 floating point, with semantic tag `1`](https://www.rfc-editor.org/rfc/rfc8949.html#name-epoch-based-date-time)
+
+> **Non-normative implementation note:** the Zarc reference implementation _accepts_ all formats for a timestamp, but always _writes_ RFC3339 text string datetimes.
 
 #### Key `3`: POSIX File Mode
 
@@ -370,6 +364,19 @@ A map of values (typically boolean flags) which keys SHOULD correspond to [file 
 
 Implementations MAY ignore attributes if obtaining or setting them is impossible or impractical.
 
+Attribute keys MUST either have a prefix signifying the system they apply to:
+
+- `win32.` for Windows
+- `linux.` for Linux
+- `bsd.` for BSDs, including MacOS
+- `_` for implementation-defined prefixes (e.g. `_ncc1701.`)
+
+OR be one of these defined unprefixed values:
+
+- `read-only`
+- `append-only`
+- `immutable`
+
 #### Key `12`: Extended File Attributes
 
 _Map: text string keys -> boolean or text or byte string._ **Optional.**
@@ -386,23 +393,7 @@ On Linux, implementations MAY assume a `user` namespace for unprefixed keys.
 _Integer._ **Optional.**
 
 If this file entry was added by another version than current, this is the index of that version.
-
-#### Key `20`: File Timestamps
-
-_Map: unsigned integer keys -> timestamp._ **Optional.**
-
-Timestamps associated with this file. Any of:
-
-- `0`: time the file was stored in this Zarc
-- `1`: ctime or file creation time
-- `2`: mtime or file modification time
-- `3`: atime or file access time — this SHOULD be the access time prior to the Zarc tool reading the file
-
-Timestamps can be stored in either:
-- [RFC3339 in _text string_ with semantic tag `0`](https://www.rfc-editor.org/rfc/rfc8949.html#name-standard-date-time-string)
-- [seconds from epoch as unsigned or negative integer, or binary64 floating point, with semantic tag `1`](https://www.rfc-editor.org/rfc/rfc8949.html#name-epoch-based-date-time)
-
-> **Non-normative implementation note:** the Zarc reference implementation _accepts_ all formats for a timestamp, but always _writes_ RFC3339 text string datetimes.
+This value MAY be `0` to mean the current version instead of being omitted.
 
 #### Key `30`: Special File Types
 
@@ -453,13 +444,13 @@ _Integer._ **Mandatory.**
 
 The offset in bytes from the start of the Zarc file to the first byte of the Zstandard frame header this entry describes.
 
-There MUST NOT be duplicate Frame Offsets in the Framelist.
+There MUST NOT be duplicate Frame Offsets in the Frame list.
 
 #### Key `1`: Frame Content Hash
 
 _Byte string._ **Mandatory.**
 
-The digest of the frame contents using the algorithm defined at the top level.
+The digest of the frame contents.
 
 Implementations MUST check that frame contents match this digest (unless "insecure" mode is used).
 
@@ -467,7 +458,7 @@ Implementations MUST check that frame contents match this digest (unless "insecu
 
 _Byte string._ **Mandatory.**
 
-A signature computed over the Frame Content Hash using the algorithm defined at the top level.
+A signature computed over the Frame Content Hash.
 
 Implementations MUST check that the signature is valid (unless "insecure" mode is used).
 
@@ -489,6 +480,7 @@ This can be used to e.g.:
 _Integer._ **Optional.**
 
 If this frame was added by another version than current, this is the index of that version.
+This value MAY be `0` to mean the current version instead of being omitted.
 
 ## Zarc EOF Trailer
 
