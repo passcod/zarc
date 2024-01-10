@@ -147,20 +147,36 @@ A directory that is not this exact length MUST be considered corrupt.
 
 This is a Zstandard frame.
 
-It contains a [CBOR](https://cbor.io)-encoded structure.
-The top level is a map with unsigned integer keys. Element order is insignificant _except_ that the first four items MUST be `0` through `3` (in any order).
+It contains a stream of length-prefixed [CBOR](https://cbor.io)-encoded structures.
+The first structure four structures MUST be Types `0` through `3` (in this order).
 
-Implementations MUST ignore keys they do not recognise.
+Each structure is a heterogenous array of the form:
+
+| **`Length`** | **`Type`** | **`Payload`** |
+|:-:|:-:|:-:|
+| u32 | unsigned integer | CBOR |
+
+Types are described below, along with their integer and payload structure.
+Types can behave in one of three ways when more than one of them is in the directory:
+- **first-wins**: the first value found is the one in vigueur, subsequent ones for this Type are disregarded;
+- **last-wins**: the last value found wins out, previous ones for this Type are discarded;
+- **collect-up**: all the values build up to a collection of values.
+  It is implementation-defined what these collections are, e.g. lists or trees or hashmaps.
+  Order is insignificant unless stated.
+
+Structures of a same Type are NOT required to be next to each other.
+
+Implementations MUST ignore Types they do not recognise.
 
 ### `0`: Zarc Directory Version
 
-_Integer._ **Mandatory.**
+_Integer._ **Mandatory, first-wins.**
 
 This must be the value `1`.
 
 ### `1`: Hash Algorithm
 
-_Integer._ **Mandatory.**
+_Integer._ **Mandatory, first-wins.**
 
 This MUST be one of the following values:
 
@@ -171,7 +187,7 @@ Implementations MAY offer an optional "insecure" mode which ignores hash mismatc
 
 ### `2`: Signature Algorithm
 
-_Integer._ **Mandatory.**
+_Integer._ **Mandatory, first-wins.**
 
 This MUST be one of the following values:
 
@@ -182,30 +198,34 @@ Implementations MAY offer an optional "insecure" mode which ignores signature mi
 
 ### `3`: Signature Public Key
 
-_Byte string._ **Mandatory.**
+_Byte string._ **Mandatory, first-wins.**
 
 Public key for the selected signature scheme.
 
 #### `4`: Written At
 
-_Timestamp or DateTime._ **Mandatory.**
+_Timestamp or DateTime._ **Mandatory, last-wins.**
 
 When this archive was created.
 
 ### `10`: User Metadata
 
-_Map(text string, boolean or text or byte string)._ **Optional.**
+_Pair: [text string, (boolean or text or byte string)]._ **Optional, collect-up.**
 
 Arbitrary user-provided metadata for the whole Zarc file.
 
 ### `13`: Prior Versions
 
-_Array of maps._ **Optional.**
+_Pair: [U16, Map: unsigned integer keys -> CBOR]._ **Optional, collect-up.**
 
-If this archive was appended to, this contains metadata for the previous versions of the directory.
-Entries are in reverse-chronological order, with the most recent prior version first.
+If this archive was appended to, these structures contains information about the previous versions of the directory.
+Constituent structures SHOULD be in reverse-chronological order, with the most recent prior version first.
 
 A maximum of 65536 prior versions can be stored, though for practical purposes implementations SHOULD restrict this to a much lower number when packing.
+
+The first item in the pair is a U16 _prior version index_, which can be referred to by file and frame entries.
+These indices MUST be unique.
+The second item is a map described below:
 
 #### `0`: Zarc Directory Version
 
@@ -239,19 +259,19 @@ When this version was created.
 
 #### `10`: User Metadata
 
-_Map(text string, boolean or text or byte string)._ **Optional.**
+_Map: text string keys -> boolean or text or byte string._ **Optional.**
 
 User metadata of this version.
 
 ### `20`: Filemap
 
-_Array of maps._ **Mandatory.**
+_Map: unsigned integer keys -> CBOR._ **Mandatory, collect-up.**
 
 Each item contains:
 
 #### `0`: Name
 
-_Array of Raw._ **Mandatory.**
+_Array of: text string or byte string._ **Mandatory.**
 
 If items are of the UTF-8 _Text string_ CBOR type, then they represent UTF-8-encoded Unicode pathname components.
 If items are of the _Byte string_ CBOR type instead, then they represent raw (non-Unicode) pathname components.
@@ -279,7 +299,7 @@ Implementations SHOULD provide an option to use the first or last or other selec
 
 #### `1`: Hash of Frame
 
-_Binary._ **Conditional.**
+_Byte string._ **Conditional.**
 
 The hash of a frame of content.
 This must be the same value as the `h` field of a **Framelist** item.
@@ -308,7 +328,7 @@ If this is not set, implementations SHOULD use a default mode as appropriate.
 
 #### `4`: POSIX File Owner
 
-_Array._ **Optional.**
+_Tuple (encoded as an array)._ **Optional.**
 
 The user that owns this file.
 This is a structure with at least one of the following types of data:
@@ -325,7 +345,7 @@ Implementations SHOULD prefer to encode IDs as 32-bit unsigned integers, but MUS
 
 #### `5`: POSIX File Group
 
-_Array._ **Optional.**
+_Tuple (encoded as an array)._ **Optional.**
 
 The group that owns this file.
 This is a structure with at least one of the following types of data:
@@ -340,13 +360,13 @@ Implementations SHOULD prefer the name to the ID if there is an existing group n
 
 #### `10`: File User Metadata
 
-_Map(text string, boolean or text or byte string)._ **Optional.**
+_Map: text string keys -> boolean or text or byte string._ **Optional.**
 
 Arbitrary user-provided metadata for this file entry.
 
 #### `11`: File Attributes
 
-_Map(text string, boolean or text or byte string)._ **Optional.**
+_Map: text string keys -> boolean or text or byte string._ **Optional.**
 
 A map of values (typically boolean flags) which keys SHOULD correspond to [file attributes](https://en.wikipedia.org/wiki/Chattr).
 
@@ -354,7 +374,7 @@ Implementations MAY ignore attributes if obtaining or setting them is impossible
 
 #### `12`: Extended File Attributes
 
-_Map(text string, boolean or text or byte string)._ **Optional.**
+_Map: text string keys -> boolean or text or byte string._ **Optional.**
 
 A map of extended attributes (`xattr`).
 
@@ -371,7 +391,7 @@ If this file entry was added by another version than current, this is the index 
 
 #### `20`: File Timestamps
 
-_Map(unsigned integer, timestamp)._ **Optional.**
+_Map: unsigned integer keys -> timestamp._ **Optional.**
 
 Timestamps associated with this file. Any of:
 
@@ -388,7 +408,7 @@ Timestamps can be stored in either:
 
 #### `30`: Special File Types
 
-_Array[unsigned integer, ...CBOR]._ **Optional.**
+_Pair: [unsigned integer, (pathname)?]._ **Optional.**
 
 This is a structure which encodes special file types.
 
@@ -425,7 +445,7 @@ The second form is preferred, for portability.
 
 ### `21`: Framelist
 
-_Array of maps._ **Mandatory.**
+_Map: unsigned integer keys -> CBOR._ **Mandatory, collect-up.**
 
 Items MUST appear in offset order.
 
@@ -441,7 +461,7 @@ There MUST NOT be duplicate Frame Offsets in the Framelist.
 
 #### `1`: Frame Content Hash
 
-_Binary._ **Mandatory.**
+_Byte string._ **Mandatory.**
 
 The digest of the frame contents using the algorithm defined at the top level.
 
@@ -449,7 +469,7 @@ Implementations MUST check that frame contents match this digest (unless "insecu
 
 #### `2`: Frame Content Signature
 
-_Binary._ **Mandatory.**
+_Byte string._ **Mandatory.**
 
 A signature computed over the Frame Content Hash using the algorithm defined at the top level.
 
