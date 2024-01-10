@@ -117,8 +117,8 @@ This is a Skippable frame with magic nibble = F.
 
 It contains:
 
-| **`Magic`** | _reserved_ **`File Version`** | **`Directory Version`** | **`Digest Type`** | **`Signature Type`** | **`Uncompressed Length`** | **`Public Key`** **`Digest`** | **`Signature`** |
-|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| **`Magic`** | _reserved_ | **`File Version`** | **`Directory Version`** | **`Digest Type`** | **`Signature Type`** | **`Uncompressed Length`** | **`Public Key`** |**`Digest`** | **`Signature`** |
+|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | 3 bytes | 1 byte | U8 | U8 | U8 | U8 | LE U64 | _n_ bytes | _n_ bytes | _n_ bytes |
 
 ### `Magic` and `File Version`
