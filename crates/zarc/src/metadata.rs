@@ -196,6 +196,19 @@ pub fn posix_mode(meta: &Metadata) -> Option<u32> {
 /// - `system` for `FILE_ATTRIBUTE_SYSTEM`
 /// - `temporary` for `FILE_ATTRIBUTE_TEMPORARY`
 ///
+/// ## Common
+///
+/// If these flags are present in any of the platforms that support them, they will also be present
+/// as unprefixed keys:
+///
+/// - `append-only`
+/// - `compressed`
+/// - `immutable`
+///
+/// If the file is read-only, this unprefixed flag will be present:
+///
+/// - `read-only`
+///
 /// [chattr]: https://man.archlinux.org/man/chattr.1
 /// [chflags]: https://man.freebsd.org/cgi/man.cgi?query=chflags&sektion=1&apropos=0&manpath=FreeBSD+14.0-RELEASE+and+Ports
 /// [win32-file-attrs]: https://learn.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants
@@ -204,11 +217,12 @@ pub fn file_attributes(
 	path: &Path,
 	meta: &Metadata,
 ) -> Result<Option<HashMap<String, AttributeValue>>> {
+	let mut attrs = HashMap::new();
 	#[cfg(target_os = "linux")]
 	{
 		use e2p_fileflags::{FileFlags, Flags};
 		let flags = path.flags()?;
-		return Ok(Some(
+		attrs.extend(
 			[
 				("append-only", flags.contains(Flags::APPEND)),
 				("casefold", flags.contains(Flags::CASEFOLD)),
@@ -226,9 +240,8 @@ pub fn file_attributes(
 			]
 			.into_iter()
 			.filter(|(_, v)| *v)
-			.map(|(k, _)| (format!("linux.{k}"), AttributeValue::Boolean(true)))
-			.collect(),
-		));
+			.map(|(k, _)| (format!("linux.{k}"), AttributeValue::Boolean(true))),
+		);
 	}
 
 	#[cfg(any(
@@ -240,7 +253,7 @@ pub fn file_attributes(
 	{
 		use nix::sys::stat::{stat, FileFlag};
 		let flags = stat(path)?.st_flags;
-		return Ok(Some(
+		attrs.extend(
 			[
 				(
 					"append-only",
@@ -256,9 +269,8 @@ pub fn file_attributes(
 			]
 			.into_iter()
 			.filter(|(_, v)| *v)
-			.map(|(k, _)| (format!("bsd.{k}"), AttributeValue::Boolean(true)))
-			.collect(),
-		));
+			.map(|(k, _)| (format!("bsd.{k}"), AttributeValue::Boolean(true))),
+		);
 	}
 
 	#[cfg(windows)]
@@ -268,7 +280,7 @@ pub fn file_attributes(
 
 		let attrs = meta.file_attributes();
 
-		return Ok(Some(
+		return attrs.extend(
 			[
 				("archived", attrs & FileSystem::FILE_ATTRIBUTE_ARCHIVE != 0),
 				(
@@ -293,13 +305,28 @@ pub fn file_attributes(
 			]
 			.into_iter()
 			.filter(|(_, v)| *v)
-			.map(|(k, _)| (format!("win32.{k}"), AttributeValue::Boolean(true)))
-			.collect(),
-		));
+			.map(|(k, _)| (format!("win32.{k}"), AttributeValue::Boolean(true))),
+		);
 	}
 
-	#[allow(unreachable_code)]
-	Ok(None)
+	if attrs.is_empty() {
+		Ok(None)
+	} else {
+		if attrs.contains_key("linux.append-only") || attrs.contains_key("bsd.append-only") {
+			attrs.insert("append-only".to_string(), AttributeValue::Boolean(true));
+		}
+		if attrs.contains_key("linux.immutable") || attrs.contains_key("bsd.immutable") {
+			attrs.insert("immutable".to_string(), AttributeValue::Boolean(true));
+		}
+		if attrs.contains_key("linux.compressed") || attrs.contains_key("win32.compressed") {
+			attrs.insert("compressed".to_string(), AttributeValue::Boolean(true));
+		}
+		if meta.permissions().readonly() {
+			attrs.insert("read-only".to_string(), AttributeValue::Boolean(true));
+		}
+
+		Ok(Some(attrs))
+	}
 }
 
 /// Get extended attributes for a file, given its path.

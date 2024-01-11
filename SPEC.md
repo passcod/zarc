@@ -373,9 +373,12 @@ Attribute keys MUST either have a prefix signifying the system they apply to:
 
 OR be one of these defined unprefixed values:
 
-- `read-only`
 - `append-only`
+- `compressed`
 - `immutable`
+- `read-only`
+
+> **Note:** attributes are metadata only, they have no bearing on the Zarc file format semantics.
 
 #### Key `12`: Extended File Attributes
 
