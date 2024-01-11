@@ -259,6 +259,13 @@ fn parse_frame<'input>(
 					error!("failed to parse zarc directory: {err}");
 				}) {
 					println!("  zarc directory: {bytes} bytes");
+					let directory_hash = blake3::hash(&buf);
+					let header_hash = Hash::from_bytes(hash);
+					if directory_hash == header_hash {
+						println!("    directory digest: valid ✅");
+					} else {
+						println!("    directory digest: invalid ❌",);
+					}
 					println!("    created at: {}", directory.written_at);
 
 					println!("    files: {}", directory.filemap.len());

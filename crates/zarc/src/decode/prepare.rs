@@ -286,7 +286,7 @@ impl<R: OnDemand> Decoder<R> {
 			let directory: ZarcDirectory = minicbor::decode(&data)?;
 
 			trace!("verify directory signature");
-			if !directory.signature_scheme.verify_data(
+			if !header.signature_type.verify_data(
 				&header.public_key,
 				&header.signature,
 				header.digest.as_slice(),
@@ -295,7 +295,7 @@ impl<R: OnDemand> Decoder<R> {
 			}
 
 			trace!("verify directory hash");
-			if !directory.hash_algorithm.verify_data(&header.digest, &data) {
+			if !header.digest_type.verify_data(&header.digest, &data) {
 				return Err(ErrorKind::DirectoryIntegrity("digest").into());
 			}
 
@@ -305,8 +305,8 @@ impl<R: OnDemand> Decoder<R> {
 					todo!("multi-version archive");
 				}
 
-				if !directory.signature_scheme.verify_data(
-					&directory.public_key,
+				if !header.signature_type.verify_data(
+					&header.public_key,
 					&frame.signature,
 					frame.frame_hash.as_slice(),
 				) {

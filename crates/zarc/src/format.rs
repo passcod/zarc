@@ -4,6 +4,7 @@ use std::{
 	collections::HashMap,
 	ffi::OsStr,
 	fmt,
+	num::NonZeroU16,
 	path::{Component, Path, PathBuf},
 	time::SystemTime,
 };
@@ -107,46 +108,78 @@ pub struct ZarcDirectoryHeader {
 }
 
 impl ZarcDirectoryHeader {
-	/// Correctly create header from data.
-	pub fn new(
-		size: usize,
+	/// New header without the digest and signature.
+	pub fn blank(
+		directory_size: u64,
 		digest_type: DigestType,
 		signature_type: SignatureType,
-		digest: impl Into<Digest>,
 		public_key: impl Into<PublicKey>,
-		signature: impl Into<Signature>,
-	) -> std::io::Result<Self> {
-		Ok(Self {
+	) -> Self {
+		Self {
 			magic: ZARC_MAGIC.to_vec(),
 			file_version: ZARC_FILE_VERSION,
 			directory_version: ZARC_DIRECTORY_VERSION,
 			digest_type,
 			signature_type,
-			directory_size: size.try_into().map_err(|err| std::io::Error::other(err))?,
-			public_key: public_key.into(),
-			digest: digest.into(),
-			signature: signature.into(),
-		})
-	}
-
-	/// Correctly create header from data.
-	pub fn new_without_digest_and_signature(
-		size: usize,
-		digest_type: DigestType,
-		signature_type: SignatureType,
-		public_key: impl Into<PublicKey>,
-	) -> std::io::Result<Self> {
-		Ok(Self {
-			magic: ZARC_MAGIC.to_vec(),
-			file_version: ZARC_FILE_VERSION,
-			directory_version: ZARC_DIRECTORY_VERSION,
-			digest_type,
-			signature_type,
-			directory_size: size.try_into().map_err(|err| std::io::Error::other(err))?,
+			directory_size,
 			public_key: public_key.into(),
 			digest: Digest(vec![0; digest_type.digest_len()]),
 			signature: Signature(vec![0; signature_type.signature_len()]),
-		})
+		}
+	}
+
+	/// Add digest and signature.
+	pub fn with_digest_and_signature(
+		self,
+		digest: impl Into<Digest>,
+		signature: impl Into<Signature>,
+	) -> Self {
+		Self {
+			digest: digest.into(),
+			signature: signature.into(),
+			..self
+		}
+	}
+}
+
+impl<C> Encode<C> for ZarcDirectoryHeader {
+	fn encode<W: minicbor::encode::write::Write>(
+		&self,
+		e: &mut Encoder<W>,
+		_ctx: &mut C,
+	) -> Result<(), minicbor::encode::Error<W::Error>> {
+		e.bytes(
+			&self
+				.to_bytes()
+				.map_err(|err| minicbor::encode::Error::message(err.to_string()))?,
+		)
+		.map(drop)
+	}
+}
+
+impl<'b, C> Decode<'b, C> for ZarcDirectoryHeader {
+	fn decode(d: &mut Decoder<'b>, _ctx: &mut C) -> Result<Self, minicbor::decode::Error> {
+		let bytes = match d.datatype()? {
+			Type::Bytes => d.bytes()?.into(),
+			Type::BytesIndef => d.bytes_iter()?.try_fold(Vec::new(), |mut vec, b| {
+				b.map(|b| {
+					vec.extend(b);
+					vec
+				})
+			})?,
+			ty => return Err(minicbor::decode::Error::type_mismatch(ty)),
+		};
+
+		let ((rest, remaining), header) = Self::from_bytes((&bytes, 0))
+			.map_err(|err| minicbor::decode::Error::message(err.to_string()))?;
+
+		if remaining == 0 {
+			Ok(header)
+		} else {
+			Err(minicbor::decode::Error::message(format!(
+				"{remaining} trailing bytes: {rest:02x?}"
+			)))
+		}
 	}
 }
 
@@ -237,32 +270,6 @@ pub struct ZarcEofTrailer {
 	pub directory_frames_size: u64,
 }
 
-/// Zarc Directory Prelude
-///
-/// This is the same thing as the [`ZarcDirectory`], but only the first four fields are present.
-/// It is used in directory streaming mode to verify the directory before continuing to decode.
-///
-/// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#zarc-directory)
-#[derive(Clone, Debug, PartialEq, Encode, Decode)]
-#[cbor(map)]
-pub struct ZarcDirectoryPrelude {
-	/// Directory version. Should match [`ZARC_DIRECTORY_VERSION`].
-	#[n(0)]
-	pub version: u8,
-
-	/// Digest (hash) algorithm.
-	#[n(1)]
-	pub hash_algorithm: HashAlgorithm,
-
-	/// Signature scheme.
-	#[n(2)]
-	pub signature_scheme: SignatureScheme,
-
-	/// Public key.
-	#[n(3)]
-	pub public_key: PublicKey,
-}
-
 /// Zarc Directory
 ///
 /// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#zarc-directory)
@@ -273,20 +280,12 @@ pub struct ZarcDirectory {
 	#[n(0)]
 	pub version: u8,
 
-	/// Digest (hash) algorithm.
+	/// Copy of the directory header without the parts derived from the directory itself.
 	#[n(1)]
-	pub hash_algorithm: HashAlgorithm,
-
-	/// Signature scheme.
-	#[n(2)]
-	pub signature_scheme: SignatureScheme,
-
-	/// Public key.
-	#[n(3)]
-	pub public_key: PublicKey,
+	pub meta: Vec<u8>,
 
 	/// Archive creation date.
-	#[n(4)]
+	#[n(2)]
 	pub written_at: Timestamp,
 
 	/// User Metadata.
@@ -303,13 +302,13 @@ pub struct ZarcDirectory {
 	#[n(13)]
 	pub prior_versions: Option<Vec<Version>>,
 
-	/// Filemap.
+	/// Files.
 	///
 	/// List of files, their pathname, their metadata, and which frame of content they point to.
 	#[n(20)]
 	pub filemap: Vec<FilemapEntry>,
 
-	/// Framelist.
+	/// Frames.
 	///
 	/// List of frames, their digest, signature, and offset in the file.
 	#[n(21)]
@@ -322,24 +321,16 @@ pub struct ZarcDirectory {
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
 #[cbor(map)]
 pub struct Version {
-	/// Directory format version at that version.
+	/// Index number used for referencing this version.
 	#[n(0)]
-	pub version: u8,
+	pub index: NonZeroU16,
 
 	/// Digest (hash) algorithm at that version.
 	#[n(1)]
-	pub hash_algorithm: HashAlgorithm,
-
-	/// Signature scheme at that version.
-	#[n(2)]
-	pub signature_scheme: SignatureScheme,
-
-	/// Public key of that version.
-	#[n(3)]
-	pub public_key: PublicKey,
+	pub meta: ZarcDirectoryHeader,
 
 	/// Version creation date.
-	#[n(4)]
+	#[n(2)]
 	pub written_at: Timestamp,
 
 	/// User Metadata of that version.
@@ -432,63 +423,6 @@ impl From<ed25519_dalek::Signature> for Signature {
 impl From<ed25519_dalek::VerifyingKey> for PublicKey {
 	fn from(value: ed25519_dalek::VerifyingKey) -> Self {
 		Self(value.as_bytes().to_vec())
-	}
-}
-
-/// Available digest algorithms.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Encode, Decode)]
-#[cbor(index_only)]
-pub enum HashAlgorithm {
-	/// BLAKE3 hash function.
-	#[n(1)]
-	Blake3,
-}
-
-impl HashAlgorithm {
-	/// Verify that a block of data matches the given digest.
-	pub fn verify_data(self, expected: &Digest, data: &[u8]) -> bool {
-		match self {
-			Self::Blake3 => {
-				let actual = blake3::hash(&data);
-				let Ok(expected_bytes) = expected.as_slice().try_into() else {
-					return false;
-				};
-				blake3::Hash::from_bytes(expected_bytes) == actual
-			}
-		}
-	}
-}
-
-/// Available signature schemes.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Encode, Decode)]
-#[cbor(index_only)]
-pub enum SignatureScheme {
-	/// Ed25519 scheme.
-	#[n(1)]
-	Ed25519,
-}
-
-impl SignatureScheme {
-	/// Verify that a block of data matches the given signature.
-	pub fn verify_data(self, public_key: &PublicKey, signature: &Signature, data: &[u8]) -> bool {
-		match self {
-			Self::Ed25519 => {
-				use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-				let Ok(public_key_bytes) = public_key.as_slice().try_into() else {
-					return false;
-				};
-				let Ok(vkey) = VerifyingKey::from_bytes(public_key_bytes) else {
-					return false;
-				};
-
-				let Ok(signature_bytes) = signature.as_slice().try_into() else {
-					return false;
-				};
-				let sig = Signature::from_bytes(signature_bytes);
-
-				vkey.verify(data, &sig).is_ok()
-			}
-		}
 	}
 }
 
