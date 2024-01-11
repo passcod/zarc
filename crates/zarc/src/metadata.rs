@@ -4,7 +4,7 @@ use std::{
 	collections::HashMap,
 	fs::{self, Metadata},
 	io::Result,
-	path::Path,
+	path::Path, num::NonZeroU16,
 };
 
 use tracing::{error, instrument, trace};
@@ -24,6 +24,7 @@ use crate::format::{
 /// [`readdir(3)`]: https://man.archlinux.org/man/readdir.3
 #[instrument(level = "trace")]
 pub fn build_filemap(
+	edition: NonZeroU16,
 	path: &Path,
 	follow_links: bool,
 	frame_hash: Option<Digest>,
@@ -53,12 +54,12 @@ pub fn build_filemap(
 	let perms = meta.permissions();
 
 	Ok(FilemapEntry {
+		edition,
 		frame_hash,
 		name,
 		user: owner_user(&meta),
 		group: owner_group(&meta),
 		mode: posix_mode(&meta),
-		readonly: Some(perms.readonly()),
 		special: if file_type.is_dir() {
 			Some(SpecialFile {
 				kind: Some(SpecialFileKind::Directory),
@@ -76,7 +77,6 @@ pub fn build_filemap(
 		attributes: file_attributes(path, &meta)?,
 		extended_attributes: file_extended_attributes(path)?,
 		user_metadata: None,
-		version_added: None,
 	})
 }
 
@@ -84,7 +84,6 @@ pub fn build_filemap(
 #[instrument(level = "trace")]
 pub fn timestamps(meta: &Metadata) -> Timestamps {
 	Timestamps {
-		inserted: Some(Timestamp::now()),
 		created: meta.created().map(Timestamp::from).ok(),
 		modified: meta.modified().map(Timestamp::from).ok(),
 		accessed: meta.accessed().map(Timestamp::from).ok(),

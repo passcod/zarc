@@ -11,7 +11,7 @@ use ozarc::framing::{
 use tracing::{debug, instrument, trace};
 
 use crate::{
-	format::{ZarcDirectory, ZarcDirectoryHeader, ZarcEofTrailer, ZarcHeader, FILE_MAGIC},
+	format::{ZarcDirectory, ZarcTrailer, ZarcHeader, FILE_MAGIC},
 	ondemand::OnDemand,
 };
 
@@ -159,26 +159,16 @@ impl<R: OnDemand> Decoder<R> {
 	#[cfg_attr(feature = "expose-internals", visibility::make(pub))]
 	#[instrument(level = "debug", skip(self))]
 	fn read_eof_trailer(&mut self) -> Result<u64> {
-		if self.directory_header_offset.is_some() {
-			return Err(ErrorKind::ReadOrderViolation("trailer cannot be read twice").into());
-		};
-
 		let mut reader = self.reader.open()?;
 		reader.seek(SeekFrom::End(-16))?;
 		let trailer = Self::read_skippable_frame(&mut reader, 0xE)?;
 
 		let mut content = Cursor::new(trailer.data);
 		let (bits_read, trailer) =
-			ZarcEofTrailer::from_reader((&mut content, 0)).map_err(SimpleError::from_deku)?;
+			ZarcTrailer::from_reader((&mut content, 0)).map_err(SimpleError::from_deku)?;
 
-		let offset = trailer.directory_frames_size.saturating_add(16);
+		let offset = trailer.directory_length.saturating_add(16);
 		debug!(%bits_read, ?trailer, directory_header_offset=%offset, "read zarc eof trailer");
-
-		debug_assert!(offset >= 16);
-		self.directory_header_offset = Some(unsafe {
-			// SAFETY: we always add 16 above, so it's always non-zero
-			NonZeroU64::new_unchecked(offset)
-		});
 
 		Ok(offset)
 	}
@@ -194,12 +184,6 @@ impl<R: OnDemand> Decoder<R> {
 				ErrorKind::ReadOrderViolation("directory header cannot be read twice").into(),
 			);
 		};
-		let Some(offset) = self.directory_header_offset else {
-			return Err(ErrorKind::ReadOrderViolation(
-				"directory header cannot be read before trailer",
-			)
-			.into());
-		};
 		let Some(file_version) = self.file_version else {
 			return Err(ErrorKind::ReadOrderViolation(
 				"directory cannot be read before file header",
@@ -208,28 +192,28 @@ impl<R: OnDemand> Decoder<R> {
 		};
 
 		let mut reader = self.reader.open()?;
-		debug!(?offset, "seek to directory header");
-		reader.seek(SeekFrom::End(-(offset.get() as i64)))?;
+		debug!("seek to trailer");
+		reader.seek(SeekFrom::End(todo!()))?;
 
-		let frame = Self::read_skippable_frame(&mut reader, 0xF)?;
-		let mut content = Cursor::new(frame.data);
-		let (bits_read, directory_header) =
-			ZarcDirectoryHeader::from_reader((&mut content, 0)).map_err(SimpleError::from_deku)?;
-		debug!(%bits_read, ?directory_header, "read zarc directory header");
+		// let frame = Self::read_skippable_frame(&mut reader, 0xF)?;
+		// let mut content = Cursor::new(frame.data);
+		// let (bits_read, directory_header) =
+		// 	ZarcDirectoryHeader::from_reader((&mut content, 0)).map_err(SimpleError::from_deku)?;
+		// debug!(%bits_read, ?directory_header, "read zarc directory header");
 
-		if directory_header.file_version != file_version.get() {
-			return Err(ErrorKind::MismatchedFileVersion.into());
-		}
+		// if directory_header.file_version != file_version.get() {
+		// 	return Err(ErrorKind::MismatchedFileVersion.into());
+		// }
 
-		self.directory_header = Some(Rc::new(directory_header));
+		// self.directory_header = Some(Rc::new(directory_header));
 
-		let offset = reader.stream_position()?;
-		debug!(%offset, "cursor is at end of directory header, ie start of directory frame");
-		debug_assert_ne!(offset, 0);
-		self.directory_offset = Some(unsafe {
-			// SAFETY: directory is always after (multiple) headers
-			NonZeroU64::new_unchecked(offset)
-		});
+		// let offset = reader.stream_position()?;
+		// debug!(%offset, "cursor is at end of directory header, ie start of directory frame");
+		// debug_assert_ne!(offset, 0);
+		// self.directory_offset = Some(unsafe {
+		// 	// SAFETY: directory is always after (multiple) headers
+		// 	NonZeroU64::new_unchecked(offset)
+		// });
 
 		Ok(())
 	}
@@ -301,10 +285,6 @@ impl<R: OnDemand> Decoder<R> {
 
 			trace!(frames=%directory.framelist.len(), "build frame lookup table");
 			for frame in directory.framelist.iter() {
-				if frame.version_added.is_some() {
-					todo!("multi-version archive");
-				}
-
 				if !header.signature_type.verify_data(
 					&header.public_key,
 					&frame.signature,
@@ -317,7 +297,7 @@ impl<R: OnDemand> Decoder<R> {
 					frame.frame_hash.clone(),
 					FrameLookupEntry {
 						offset: frame.offset,
-						uncompressed_size: frame.uncompressed_size,
+						uncompressed: frame.uncompressed,
 					},
 				);
 			}
@@ -357,5 +337,5 @@ pub struct FrameLookupEntry {
 	pub offset: u64,
 
 	/// Uncompressed payload size in bytes.
-	pub uncompressed_size: u64,
+	pub uncompressed: u64,
 }

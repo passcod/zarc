@@ -41,7 +41,7 @@ impl<R: OnDemand> Decoder<R> {
 		Ok(Some(FrameIterator::new(
 			self.read_zstandard_frame(entry.offset)?,
 			digest.clone(),
-			entry.uncompressed_size,
+			entry.uncompressed,
 		)))
 	}
 }

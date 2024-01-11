@@ -59,7 +59,7 @@ pub struct ZarcHeader {
 /// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#zarc-directory-header)
 #[derive(Clone, Debug, Eq, PartialEq, DekuRead, DekuWrite)]
 #[deku(endian = "little")]
-pub struct ZarcDirectoryHeader {
+pub struct ZarcTrailer {
 	/// Magic number. Should match [`ZARC_MAGIC`].
 	#[deku(count = "3", pad_bytes_after = "1")]
 	pub magic: Vec<u8>,
@@ -78,9 +78,13 @@ pub struct ZarcDirectoryHeader {
 	/// Signature scheme
 	pub signature_type: SignatureType,
 
+	/// Directory framed length in bytes.
+	#[deku(bytes = "8")]
+	pub directory_length: u64,
+
 	/// Uncompressed size in bytes of the directory
 	#[deku(bytes = "8")]
-	pub directory_size: u64,
+	pub directory_uncompressed_size: u64,
 
 	/// Public key
 	#[deku(
@@ -107,42 +111,7 @@ pub struct ZarcDirectoryHeader {
 	pub signature: Signature,
 }
 
-impl ZarcDirectoryHeader {
-	/// New header without the digest and signature.
-	pub fn blank(
-		directory_size: u64,
-		digest_type: DigestType,
-		signature_type: SignatureType,
-		public_key: impl Into<PublicKey>,
-	) -> Self {
-		Self {
-			magic: ZARC_MAGIC.to_vec(),
-			file_version: ZARC_FILE_VERSION,
-			directory_version: ZARC_DIRECTORY_VERSION,
-			digest_type,
-			signature_type,
-			directory_size,
-			public_key: public_key.into(),
-			digest: Digest(vec![0; digest_type.digest_len()]),
-			signature: Signature(vec![0; signature_type.signature_len()]),
-		}
-	}
-
-	/// Add digest and signature.
-	pub fn with_digest_and_signature(
-		self,
-		digest: impl Into<Digest>,
-		signature: impl Into<Signature>,
-	) -> Self {
-		Self {
-			digest: digest.into(),
-			signature: signature.into(),
-			..self
-		}
-	}
-}
-
-impl<C> Encode<C> for ZarcDirectoryHeader {
+impl<C> Encode<C> for ZarcTrailer {
 	fn encode<W: minicbor::encode::write::Write>(
 		&self,
 		e: &mut Encoder<W>,
@@ -157,7 +126,7 @@ impl<C> Encode<C> for ZarcDirectoryHeader {
 	}
 }
 
-impl<'b, C> Decode<'b, C> for ZarcDirectoryHeader {
+impl<'b, C> Decode<'b, C> for ZarcTrailer {
 	fn decode(d: &mut Decoder<'b>, _ctx: &mut C) -> Result<Self, minicbor::decode::Error> {
 		let bytes = match d.datatype()? {
 			Type::Bytes => d.bytes()?.into(),
@@ -184,10 +153,12 @@ impl<'b, C> Decode<'b, C> for ZarcDirectoryHeader {
 }
 
 /// Available digest algorithms.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, DekuRead, DekuWrite)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Encode, Decode, DekuRead, DekuWrite)]
 #[deku(endian = "endian", type = "u8", ctx = "endian: deku::ctx::Endian")]
+#[cbor(index_only)]
 pub enum DigestType {
 	/// BLAKE3 hash function.
+	#[n(1)]
 	Blake3 = 1,
 }
 
@@ -214,10 +185,12 @@ impl DigestType {
 }
 
 /// Available signature schemes.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, DekuRead, DekuWrite)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Encode, Decode, DekuRead, DekuWrite)]
 #[deku(endian = "endian", type = "u8", ctx = "endian: deku::ctx::Endian")]
+#[cbor(index_only)]
 pub enum SignatureType {
 	/// Ed25519 scheme.
+	#[n(1)]
 	Ed25519 = 1,
 }
 
@@ -259,59 +232,25 @@ impl SignatureType {
 	}
 }
 
-/// Zarc EOF Trailer
-///
-/// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#zarc-eof-trailer)
-#[derive(Clone, Debug, Eq, PartialEq, DekuRead, DekuWrite)]
-#[deku(endian = "little")]
-pub struct ZarcEofTrailer {
-	/// Directory frames length in bytes.
-	#[deku(bytes = "8")]
-	pub directory_frames_size: u64,
-}
-
 /// Zarc Directory
 ///
 /// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#zarc-directory)
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
 #[cbor(map)]
 pub struct ZarcDirectory {
-	/// Directory version. Should match [`ZARC_DIRECTORY_VERSION`].
-	#[n(0)]
-	pub version: u8,
-
-	/// Copy of the directory header without the parts derived from the directory itself.
 	#[n(1)]
-	pub meta: Vec<u8>,
-
-	/// Archive creation date.
-	#[n(2)]
-	pub written_at: Timestamp,
-
-	/// User Metadata.
-	///
-	/// You can write a Some(empty HashMap), but you'll save two bytes if you write a None
-	/// instead. This is pretty cheap here, but adds up for the similar fields in
-	/// [`filemap`](FilemapEntry).
-	#[n(10)]
-	pub user_metadata: Option<HashMap<String, AttributeValue>>,
-
-	/// Prior versions.
-	///
-	/// When a file is appended to, metadata about the previous version (and so on) is kept around.
-	#[n(13)]
-	pub prior_versions: Option<Vec<Version>>,
+	pub editions: Vec<Edition>,
 
 	/// Files.
 	///
 	/// List of files, their pathname, their metadata, and which frame of content they point to.
-	#[n(20)]
+	#[n(2)]
 	pub filemap: Vec<FilemapEntry>,
 
 	/// Frames.
 	///
 	/// List of frames, their digest, signature, and offset in the file.
-	#[n(21)]
+	#[n(3)]
 	pub framelist: Vec<FrameEntry>,
 }
 
@@ -320,20 +259,33 @@ pub struct ZarcDirectory {
 /// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#13-prior-versions)
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
 #[cbor(map)]
-pub struct Version {
-	/// Index number used for referencing this version.
+pub struct Edition {
+	/// Edition number.
+	///
+	/// Used for referencing it in frames and files.
 	#[n(0)]
-	pub index: NonZeroU16,
+	pub number: NonZeroU16,
 
-	/// Digest (hash) algorithm at that version.
+	/// Public key of this edition.
 	#[n(1)]
-	pub meta: ZarcDirectoryHeader,
+	pub public_key: PublicKey,
 
 	/// Version creation date.
 	#[n(2)]
 	pub written_at: Timestamp,
 
+	/// Digest algorithm used by this edition.
+	#[n(3)]
+	pub digest_type: DigestType,
+
+	/// Signature algorithm used by this edition.
+	#[n(4)]
+	pub signature_type: SignatureType,
+
 	/// User Metadata of that version.
+	///
+	/// You can write a Some(empty HashMap), but you'll save two bytes if you write a None instead.
+	/// This is pretty cheap here, but adds up for the similar fields in [`files`](FilemapEntry).
 	#[n(10)]
 	pub user_metadata: Option<HashMap<String, AttributeValue>>,
 }
@@ -432,17 +384,17 @@ impl From<ed25519_dalek::VerifyingKey> for PublicKey {
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
 #[cbor(map)]
 pub struct FilemapEntry {
-	/// Pathname.
+	/// Edition that added this entry.
 	#[n(0)]
+	pub edition: NonZeroU16,
+
+	/// Pathname.
+	#[n(1)]
 	pub name: Pathname,
 
 	/// Hash of a frame of content.
-	#[n(1)]
-	pub frame_hash: Option<Digest>,
-
-	/// Is readonly.
 	#[n(2)]
-	pub readonly: Option<bool>,
+	pub frame_hash: Option<Digest>,
 
 	/// POSIX mode.
 	#[n(3)]
@@ -456,6 +408,14 @@ pub struct FilemapEntry {
 	#[n(5)]
 	pub group: Option<PosixOwner>,
 
+	/// Timestamps.
+	#[n(6)]
+	pub timestamps: Option<Timestamps>,
+
+	/// Special files.
+	#[n(7)]
+	pub special: Option<SpecialFile>,
+
 	/// User metadata.
 	#[n(10)]
 	pub user_metadata: Option<HashMap<String, AttributeValue>>,
@@ -467,18 +427,6 @@ pub struct FilemapEntry {
 	/// Extended attributes.
 	#[n(12)]
 	pub extended_attributes: Option<HashMap<String, AttributeValue>>,
-
-	/// Version this entry was added in.
-	#[n(13)]
-	pub version_added: Option<u16>,
-
-	/// Timestamps.
-	#[n(20)]
-	pub timestamps: Option<Timestamps>,
-
-	/// Special files.
-	#[n(30)]
-	pub special: Option<SpecialFile>,
 }
 
 /// Pathname as components.
@@ -748,11 +696,7 @@ impl<'b, C> Decode<'b, C> for PosixOwner {
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
 #[cbor(map)]
 pub struct Timestamps {
-	/// Insertion time (time added to Zarc).
-	#[n(0)]
-	pub inserted: Option<Timestamp>,
-
-	/// Creation time (ctime).
+	/// Creation time (birth time).
 	#[n(1)]
 	pub created: Option<Timestamp>,
 
@@ -1036,23 +980,27 @@ impl<'b, C> Decode<'b, C> for LinkTarget {
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
 #[cbor(map)]
 pub struct FrameEntry {
-	/// Frame offset.
+	/// Edition which added this frame.
 	#[n(0)]
+	pub edition: NonZeroU16,
+
+	/// Frame offset.
+	#[n(1)]
 	pub offset: u64,
 
 	/// Hash of the frame.
-	#[n(1)]
+	#[n(2)]
 	pub frame_hash: Digest,
 
 	/// Signature against hash.
-	#[n(2)]
+	#[n(3)]
 	pub signature: Signature,
 
-	/// Uncompressed content size in bytes.
-	#[n(3)]
-	pub uncompressed_size: u64,
+	/// Entire frame length in bytes.
+	#[n(4)]
+	pub length: u64,
 
-	/// Version this entry was added in.
-	#[n(13)]
-	pub version_added: Option<u16>,
+	/// Uncompressed content size in bytes.
+	#[n(5)]
+	pub uncompressed: u64,
 }

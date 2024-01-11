@@ -116,7 +116,7 @@ Types `32768` through `65535` are private use and may be used freely for impleme
 All other types are reserved.
 Implementations MUST ignore Types they do not recognise.
 
-### Type `1`: Edition
+### Type `1`: Editions
 
 _Map: unsigned integer keys -> CBOR._ **Mandatory, collect-up.**
 
@@ -127,12 +127,12 @@ At least one edition must be present.
 
 _Non-zero unsigned integer._ **Mandatory.**
 
-The number of editions in a file is technically unlimited, but SHOULD be restricted to 65535 or less.
+The number of editions in a file is technically unlimited, but as of this version MUST be less than 65536.
 For practical purposes implementations SHOULD warn when creating more than 1000 editions, and MAY set that limit lower.
 
 Creating an edition involves incrementing the edition number, so the latest edition of the file is `max(edition list)`.
 
-This is used in Frame and File types as the `Edition Added` field.
+This is used in Frame and File types as the `Edition` field.
 
 #### Key `1`: Public Key
 
@@ -263,8 +263,7 @@ _Map: unsigned integer keys -> timestamp._ **Optional.**
 
 Timestamps associated with this file. Any of:
 
-- `0`: time the file was stored in this Zarc
-- `1`: ctime or file creation time
+- `1`: birth time or file creation time
 - `2`: mtime or file modification time
 - `3`: atime or file access time — this SHOULD be the access time prior to the Zarc tool reading the file
 
@@ -388,7 +387,15 @@ A signature computed over the Frame Content Hash.
 
 Implementations MUST check that the signature is valid (unless "insecure" mode is used).
 
-#### Key `4`: Uncompressed Content Length
+#### Key `4`: Framed Size
+
+_Integer._ **Mandatory.**
+
+The size of the entire frame in bytes.
+
+This may be used to request that range of bytes from a remote source without reading too far or incrementally via block information.
+
+#### Key `5`: Uncompressed Content Length
 
 _Integer._ **Mandatory.**
 
@@ -398,7 +405,7 @@ This is a complement to the Frame Content Size field available on the Zstandard 
 
 This can be used to e.g.:
 - avoid unpacking frames which exceed available memory or storage;
-- to preallocate storage before unpacking;
+- preallocate storage before unpacking;
 - estimate the uncompressed total size of the archive.
 
 ## Zarc Trailer

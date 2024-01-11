@@ -3,7 +3,7 @@
 use std::{
 	collections::HashMap,
 	fmt,
-	io::{Error, Result, Write},
+	io::{Error, Result, Write}, num::NonZeroU16,
 };
 
 use deku::{DekuContainerRead, DekuContainerWrite};
@@ -12,9 +12,9 @@ use zstd_safe::{CCtx, ResetDirective};
 pub use zstd_safe::{CParameter as ZstdParameter, Strategy as ZstdStrategy};
 
 use crate::format::{
-	Digest, DigestType, FilemapEntry, FrameEntry, HashAlgorithm, PublicKey, Signature,
-	SignatureScheme, SignatureType, Timestamp, ZarcDirectory, ZarcDirectoryHeader, ZarcEofTrailer,
-	FILE_MAGIC, ZARC_DIRECTORY_VERSION,
+	Digest, DigestType, FilemapEntry, FrameEntry, PublicKey, Signature,
+	SignatureType, Timestamp, ZarcDirectory, ZarcTrailer,
+	FILE_MAGIC, Edition, ZARC_MAGIC, ZARC_FILE_VERSION, ZARC_DIRECTORY_VERSION,
 };
 use crate::map_zstd_error;
 
@@ -23,6 +23,7 @@ pub struct Encoder<'writer, W: Write> {
 	writer: &'writer mut W,
 	zstd: CCtx<'writer>,
 	key: SigningKey,
+	edition: NonZeroU16,
 	filemap: Vec<FilemapEntry>,
 	framelist: HashMap<Digest, FrameEntry>,
 	offset: usize,
@@ -35,6 +36,7 @@ impl<W: Write + fmt::Debug> fmt::Debug for Encoder<'_, W> {
 			.field("writer", &self.writer)
 			.field("zstd", &"zstd-safe compression context")
 			.field("key", &self.key)
+			.field("edition", &self.edition)
 			.field("filemap", &self.filemap)
 			.field("framelist", &self.framelist)
 			.field("offset", &self.offset)
@@ -74,6 +76,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 			writer,
 			zstd,
 			key,
+			edition: unsafe { NonZeroU16::new_unchecked(1) },
 			filemap: Vec::new(),
 			framelist: HashMap::new(),
 			offset,
@@ -220,23 +223,23 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 				.to_vec(),
 		);
 
-		self.offset += if self.compress {
+		let bytes = if self.compress {
 			self.write_compressed_frame(content)
 		} else {
 			self.write_uncompressed_frame(content)
 		}?;
+		self.offset += bytes;
 
 		// push frame to list
 		self.framelist.insert(
 			digest.clone(),
 			FrameEntry {
+				edition: self.edition,
 				offset: offset.try_into().map_err(|err| Error::other(err))?,
 				frame_hash: digest.clone(),
 				signature,
-				version_added: None,
-				uncompressed_size: uncompressed_size
-					.try_into()
-					.map_err(|err| Error::other(err))?,
+				length: bytes as _,
+				uncompressed: uncompressed_size as _,
 			},
 		);
 
@@ -272,10 +275,14 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		framelist.sort_by_key(|entry| entry.offset);
 
 		let directory = ZarcDirectory {
-			meta: header,
-			written_at: Timestamp::now(),
-			user_metadata: Default::default(),
-			prior_versions: None,
+			editions: vec![Edition {
+				number: self.edition,
+				written_at: Timestamp::now(),
+				user_metadata: Default::default(),
+				digest_type: DigestType::Blake3,
+				signature_type: SignatureType::Ed25519,
+				public_key: public_key.clone(),
+			}],
 			filemap: std::mem::take(&mut self.filemap),
 			framelist,
 		};
@@ -297,15 +304,18 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		let bytes = self.write_compressed_frame(&directory_bytes)?;
 		tracing::trace!(%bytes, "wrote directory");
 
-		let trailer = ZarcTrailer::new(
-			DigestType::Blake3,
-			SignatureType::Ed25519,
-			public_key.clone(),
-			directory_bytes.len(),
-			digest.to_vec(),
-			signature.to_vec(),
-			self.offset,
-		);
+		let trailer = ZarcTrailer {
+			magic: ZARC_MAGIC.to_vec(),
+			file_version: ZARC_FILE_VERSION,
+			directory_version: ZARC_DIRECTORY_VERSION,
+			digest_type: DigestType::Blake3,
+			signature_type: SignatureType::Ed25519,
+			directory_length: bytes as _,
+			directory_uncompressed_size: directory_bytes.len() as _,
+			public_key: public_key.clone().into(),
+			digest: Digest(digest.to_vec()),
+			signature: Signature(signature.to_vec()),
+		};
 		tracing::trace!(?trailer, "built trailer");
 
 		let trailer_bytes = trailer.to_bytes()?;
@@ -315,7 +325,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 			"serialised trailer"
 		);
 
-		let bytes = self.write_skippable_frame(0xF, trailer_bytes)?;;
+		let bytes = self.write_skippable_frame(0xF, trailer_bytes)?;
 		tracing::trace!(%bytes, "wrote trailer");
 
 		self.writer.flush()?;

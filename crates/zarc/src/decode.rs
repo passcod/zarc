@@ -8,8 +8,8 @@ use std::{
 
 use crate::{
 	format::{
-		Digest, FilemapEntry, HashAlgorithm, Signature, SignatureScheme, ZarcDirectory,
-		ZarcDirectoryHeader,
+		Digest, FilemapEntry, DigestType, Signature, SignatureType, ZarcDirectory,
+		ZarcTrailer,
 	},
 	ondemand::OnDemand,
 };
@@ -39,13 +39,12 @@ pub struct Decoder<R> {
 	/// mostly used to check that the other file version fields in the various headers match it.
 	file_version: Option<NonZeroU8>,
 
-	// offsets to various parts of the file, once known
-	directory_header_offset: Option<NonZeroU64>,
+	/// Offset to the Directory frame
 	directory_offset: Option<NonZeroU64>,
 
 	/// Zarc Directory Header, once known. This contains the digest and signature of the directory,
 	/// so it's needed to verify the directory integrity.
-	directory_header: Option<Rc<ZarcDirectoryHeader>>,
+	directory_header: Option<Rc<ZarcTrailer>>,
 
 	/// This maps digests to frame offsets and uncompressed sizes, so reading from the directory is
 	/// not required to extract a frame given its digest.
@@ -62,7 +61,6 @@ impl<R: OnDemand> Decoder<R> {
 		Ok(Self {
 			reader,
 			file_version: None,
-			directory_header_offset: None,
 			directory_offset: None,
 			directory_header: None,
 			frame_lookup: HashMap::new(),
@@ -80,14 +78,14 @@ impl<R: OnDemand> Decoder<R> {
 	/// Return the directory digest.
 	///
 	/// This is known once the directory has been read.
-	pub fn directory_digest(&self) -> Option<(HashAlgorithm, &Digest)> {
+	pub fn directory_digest(&self) -> Option<(DigestType, &Digest)> {
 		todo!()
 	}
 
 	/// Return the directory signature.
 	///
 	/// This is known once the directory has been read.
-	pub fn directory_signature(&self) -> Option<(SignatureScheme, &Signature)> {
+	pub fn directory_signature(&self) -> Option<(SignatureType, &Signature)> {
 		todo!()
 	}
 
@@ -95,7 +93,7 @@ impl<R: OnDemand> Decoder<R> {
 	///
 	/// This is known once the directory header has been read.
 	pub fn directory_size(&self) -> Option<u64> {
-		self.directory_header.as_ref().map(|dh| dh.directory_size)
+		todo!()
 	}
 
 	/// Iterate through the filemap.
