@@ -3,7 +3,6 @@ use std::{
 	path::PathBuf,
 };
 
-use blake3::Hash;
 use clap::{Parser, ValueHint};
 use deku::DekuContainerRead;
 use ed25519_dalek::{Signature, VerifyingKey};
@@ -259,54 +258,7 @@ fn parse_frame<'input>(
 				if let Ok(directory) = minicbor::decode::<ZarcDirectory>(&buf).map_err(|err| {
 					error!("failed to parse zarc directory: {err}");
 				}) {
-					println!(
-						"  zarc: directory (directory format v{}) ({bytes} bytes)",
-						directory.version
-					);
-
-					println!("    hash algorithm: {:?}", directory.hash_algorithm);
-					if let Ok(hash) = header.hash.as_slice().try_into() {
-						let directory_hash = blake3::hash(&buf);
-						let header_hash = Hash::from_bytes(hash);
-						if directory_hash == header_hash {
-							println!("      directory digest: valid ✅");
-						} else {
-							println!("      directory digest: invalid ❌",);
-						}
-					} else {
-						println!(
-							"      !!! failed to parse hash: expected {} bytes, found {} !!!",
-							blake3::KEY_LEN,
-							header.hash.len()
-						);
-					}
-
-					println!("    signature scheme: {:?}", directory.signature_scheme);
-					let header_sig = Signature::try_from(header.sig.as_slice())
-						.map_err(|err| {
-							println!("      !!! failed to parse signature: {err}");
-						})
-						.ok();
-
-					println!("    public key: {}", bs64::encode(&directory.public_key));
-
-					let key = VerifyingKey::try_from(directory.public_key.as_slice())
-						.map_err(|err| {
-							println!("      !!! failed to parse public key: {err}");
-						})
-						.ok();
-					if key.map_or(false, |k| k.is_weak()) {
-						println!("      !!! key is valid but weak !!!");
-					}
-					if let Some(check) =
-						header_sig.and_then(|sig| key.map(|k| k.verify_strict(&header.hash, &sig)))
-					{
-						match check {
-							Ok(_) => println!("      directory signature: valid ✅"),
-							Err(err) => println!("      directory signature: invalid ❌ ({err})"),
-						}
-					}
-
+					println!("  zarc directory: {bytes} bytes");
 					println!("    created at: {}", directory.written_at);
 
 					println!("    files: {}", directory.filemap.len());
@@ -465,13 +417,18 @@ fn parse_frame<'input>(
 								println!("\n          !!! failed to parse signature: {err}");
 							})
 							.ok();
-						if let Some(check) =
-							sig.and_then(|sig| key.map(|k| k.verify_strict(&file.frame_hash, &sig)))
-						{
+
+						if let Some(check) = sig.map(|sig| {
+							header.signature_type.verify_data(
+								&header.public_key,
+								&sig.into(),
+								&file.frame_hash,
+							)
+						}) {
 							match check {
-								Ok(_) => println!(" (✅)"),
-								Err(err) => {
-									println!("\n          !!! signature invalid ❌ ({err})")
+								true => println!(" (✅)"),
+								false => {
+									println!("\n          !!! signature invalid ❌")
 								}
 							}
 						} else {
@@ -550,22 +507,54 @@ fn parse_frame<'input>(
 			}
 
 			if zarc && nibble == 0xF {
-				if let Ok((_, directory_header)) = ZarcDirectoryHeader::from_bytes((&frame.data, 0))
-					.map_err(|err| {
+				if let Ok((_, header)) =
+					ZarcDirectoryHeader::from_bytes((&frame.data, 0)).map_err(|err| {
 						error!("failed to parse zarc directory header: {err}");
 					}) {
-					println!(
-						"  zarc: directory header (file format v{})",
-						directory_header.file_version
-					);
-					println!(
-						"    uncompressed size: {} bytes",
-						directory_header.directory_size
-					);
-					println!("    digest: {}", bs64::encode(&directory_header.hash));
-					println!("    signature: {}", bs64::encode(&directory_header.sig));
+					println!("  zarc: directory header");
+					println!("    file format v{}", header.file_version);
+					println!("    directory format v{}", header.directory_version);
 
-					return Ok((rest, true, Some(directory_header)));
+					println!(
+						"    directory uncompressed size: {} bytes",
+						header.directory_size
+					);
+
+					println!(
+						"    digest ({:?}): {}",
+						header.digest_type,
+						bs64::encode(&header.digest)
+					);
+					println!(
+						"    signature ({:?}): {}",
+						header.signature_type,
+						bs64::encode(&header.signature)
+					);
+					println!(
+						"    publickey ({:?}): {}",
+						header.signature_type,
+						bs64::encode(&header.public_key)
+					);
+
+					let key = VerifyingKey::try_from(header.public_key.as_slice())
+						.map_err(|err| {
+							println!("      !!! failed to parse public key: {err}");
+						})
+						.ok();
+					if key.map_or(false, |k| k.is_weak()) {
+						println!("      !!! key is valid but weak !!!");
+					}
+					if header.signature_type.verify_data(
+						&header.public_key,
+						&header.signature,
+						&header.digest,
+					) {
+						println!("      directory signature: valid ✅");
+					} else {
+						println!("      directory signature: invalid ❌");
+					}
+
+					return Ok((rest, true, Some(header)));
 				}
 			}
 

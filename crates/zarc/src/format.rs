@@ -60,58 +60,169 @@ pub struct ZarcHeader {
 #[deku(endian = "little")]
 pub struct ZarcDirectoryHeader {
 	/// Magic number. Should match [`ZARC_MAGIC`].
-	#[deku(count = "3")]
+	#[deku(count = "3", pad_bytes_after = "1")]
 	pub magic: Vec<u8>,
 
 	/// File format version number. Should match [`ZARC_FILE_VERSION`].
 	#[deku(bytes = "1")]
 	pub file_version: u8,
 
-	#[deku(bytes = "2", update = "self.hash.len()")]
-	hash_length: u16,
+	/// Directory format version number. Should match [`ZARC_DIRECTORY_VERSION`].
+	#[deku(bytes = "1")]
+	pub directory_version: u8,
 
-	/// Digest hash of the directory
-	#[deku(
-		count = "hash_length",
-		map = "|field: Vec<u8>| -> Result<_, DekuError> { Ok(Digest(field)) }",
-		writer = "self.hash.0.write(deku::output, ())"
-	)]
-	pub hash: Digest,
+	/// Digest (hash) algorithm
+	pub digest_type: DigestType,
 
-	#[deku(bytes = "2", update = "self.sig.len()")]
-	sig_length: u16,
-
-	/// Signature over the digest
-	#[deku(
-		count = "sig_length",
-		map = "|field| -> Result<_, DekuError> { Ok(Signature(field)) }",
-		writer = "self.sig.0.write(deku::output, ())"
-	)]
-	pub sig: Signature,
+	/// Signature scheme
+	pub signature_type: SignatureType,
 
 	/// Uncompressed size in bytes of the directory
 	#[deku(bytes = "8")]
 	pub directory_size: u64,
+
+	/// Public key
+	#[deku(
+		count = "signature_type.public_key_len()",
+		map = "|field| -> Result<_, DekuError> { Ok(PublicKey(field)) }",
+		writer = "self.public_key.0.write(deku::output, ())"
+	)]
+	pub public_key: PublicKey,
+
+	/// Digest of the directory
+	#[deku(
+		count = "digest_type.digest_len()",
+		map = "|field: Vec<u8>| -> Result<_, DekuError> { Ok(Digest(field)) }",
+		writer = "self.digest.0.write(deku::output, ())"
+	)]
+	pub digest: Digest,
+
+	/// Signature over the digest
+	#[deku(
+		count = "signature_type.signature_len()",
+		map = "|field| -> Result<_, DekuError> { Ok(Signature(field)) }",
+		writer = "self.signature.0.write(deku::output, ())"
+	)]
+	pub signature: Signature,
 }
 
 impl ZarcDirectoryHeader {
 	/// Correctly create header from data.
-	pub fn new(size: usize, hash: Vec<u8>, sig: Vec<u8>) -> std::io::Result<Self> {
+	pub fn new(
+		size: usize,
+		digest_type: DigestType,
+		signature_type: SignatureType,
+		digest: impl Into<Digest>,
+		public_key: impl Into<PublicKey>,
+		signature: impl Into<Signature>,
+	) -> std::io::Result<Self> {
 		Ok(Self {
-			directory_size: size.try_into().map_err(|err| std::io::Error::other(err))?,
 			magic: ZARC_MAGIC.to_vec(),
 			file_version: ZARC_FILE_VERSION,
-			hash_length: hash
-				.len()
-				.try_into()
-				.map_err(|err| std::io::Error::other(format!("hash is too long: {err}")))?,
-			hash: Digest(hash),
-			sig_length: sig
-				.len()
-				.try_into()
-				.map_err(|err| std::io::Error::other(format!("signature is too long: {err}")))?,
-			sig: Signature(sig),
+			directory_version: ZARC_DIRECTORY_VERSION,
+			digest_type,
+			signature_type,
+			directory_size: size.try_into().map_err(|err| std::io::Error::other(err))?,
+			public_key: public_key.into(),
+			digest: digest.into(),
+			signature: signature.into(),
 		})
+	}
+
+	/// Correctly create header from data.
+	pub fn new_without_digest_and_signature(
+		size: usize,
+		digest_type: DigestType,
+		signature_type: SignatureType,
+		public_key: impl Into<PublicKey>,
+	) -> std::io::Result<Self> {
+		Ok(Self {
+			magic: ZARC_MAGIC.to_vec(),
+			file_version: ZARC_FILE_VERSION,
+			directory_version: ZARC_DIRECTORY_VERSION,
+			digest_type,
+			signature_type,
+			directory_size: size.try_into().map_err(|err| std::io::Error::other(err))?,
+			public_key: public_key.into(),
+			digest: Digest(vec![0; digest_type.digest_len()]),
+			signature: Signature(vec![0; signature_type.signature_len()]),
+		})
+	}
+}
+
+/// Available digest algorithms.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, DekuRead, DekuWrite)]
+#[deku(endian = "endian", type = "u8", ctx = "endian: deku::ctx::Endian")]
+pub enum DigestType {
+	/// BLAKE3 hash function.
+	Blake3 = 1,
+}
+
+impl DigestType {
+	/// Length in bytes of a digest of this type.
+	pub const fn digest_len(self) -> usize {
+		match self {
+			Self::Blake3 => blake3::OUT_LEN,
+		}
+	}
+
+	/// Verify that a block of data matches the given digest.
+	pub fn verify_data(self, expected: &Digest, data: &[u8]) -> bool {
+		match self {
+			Self::Blake3 => {
+				let actual = blake3::hash(&data);
+				let Ok(expected_bytes) = expected.as_slice().try_into() else {
+					return false;
+				};
+				blake3::Hash::from_bytes(expected_bytes) == actual
+			}
+		}
+	}
+}
+
+/// Available signature schemes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, DekuRead, DekuWrite)]
+#[deku(endian = "endian", type = "u8", ctx = "endian: deku::ctx::Endian")]
+pub enum SignatureType {
+	/// Ed25519 scheme.
+	Ed25519 = 1,
+}
+
+impl SignatureType {
+	/// Length in bytes of a public key in this scheme.
+	pub const fn public_key_len(self) -> usize {
+		match self {
+			Self::Ed25519 => ed25519_dalek::PUBLIC_KEY_LENGTH,
+		}
+	}
+
+	/// Length in bytes of a signature in this scheme.
+	pub const fn signature_len(self) -> usize {
+		match self {
+			Self::Ed25519 => ed25519_dalek::SIGNATURE_LENGTH,
+		}
+	}
+
+	/// Verify that a block of data matches the given signature.
+	pub fn verify_data(self, public_key: &PublicKey, signature: &Signature, data: &[u8]) -> bool {
+		match self {
+			Self::Ed25519 => {
+				use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+				let Ok(public_key_bytes) = public_key.as_slice().try_into() else {
+					return false;
+				};
+				let Ok(vkey) = VerifyingKey::from_bytes(public_key_bytes) else {
+					return false;
+				};
+
+				let Ok(signature_bytes) = signature.as_slice().try_into() else {
+					return false;
+				};
+				let sig = Signature::from_bytes(signature_bytes);
+
+				vkey.verify(data, &sig).is_ok()
+			}
+		}
 	}
 }
 
@@ -239,7 +350,7 @@ pub struct Version {
 macro_rules! bytea_newtype {
 	($name:ident # $doc:literal) => {
 		#[doc = $doc]
-		#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+		#[derive(Clone, Debug, Eq, PartialEq, Hash, DekuWrite)]
 		pub struct $name(pub Vec<u8>);
 
 		impl std::ops::Deref for $name {
@@ -247,6 +358,28 @@ macro_rules! bytea_newtype {
 
 			fn deref(&self) -> &Self::Target {
 				&self.0
+			}
+		}
+
+		impl From<Vec<u8>> for $name {
+			fn from(bytes: Vec<u8>) -> Self {
+				Self(bytes)
+			}
+		}
+
+		impl<'a, Ctx> DekuReader<'a, Ctx> for $name
+		where
+			Vec<u8>: DekuReader<'a, Ctx>,
+			Ctx: Copy,
+		{
+			fn from_reader_with_ctx<R: deku::no_std_io::Read>(
+				reader: &mut deku::reader::Reader<'_, R>,
+				ctx: Ctx,
+			) -> Result<Self, DekuError>
+			where
+				Self: Sized,
+			{
+				Vec::<u8>::from_reader_with_ctx(reader, ctx).map(Self)
 			}
 		}
 
@@ -280,9 +413,27 @@ macro_rules! bytea_newtype {
 	};
 }
 
-bytea_newtype!(Digest # "Hash or digest.");
+bytea_newtype!(Digest # "Digest.");
 bytea_newtype!(Signature # "Signature.");
 bytea_newtype!(PublicKey # "Public key.");
+
+impl From<blake3::Hash> for Digest {
+	fn from(value: blake3::Hash) -> Self {
+		Self(value.as_bytes().to_vec())
+	}
+}
+
+impl From<ed25519_dalek::Signature> for Signature {
+	fn from(value: ed25519_dalek::Signature) -> Self {
+		Self(value.to_vec())
+	}
+}
+
+impl From<ed25519_dalek::VerifyingKey> for PublicKey {
+	fn from(value: ed25519_dalek::VerifyingKey) -> Self {
+		Self(value.as_bytes().to_vec())
+	}
+}
 
 /// Available digest algorithms.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Encode, Decode)]

@@ -12,9 +12,9 @@ use zstd_safe::{CCtx, ResetDirective};
 pub use zstd_safe::{CParameter as ZstdParameter, Strategy as ZstdStrategy};
 
 use crate::format::{
-	Digest, FilemapEntry, FrameEntry, HashAlgorithm, PublicKey, Signature, SignatureScheme,
-	Timestamp, ZarcDirectory, ZarcDirectoryHeader, ZarcEofTrailer, FILE_MAGIC,
-	ZARC_DIRECTORY_VERSION,
+	Digest, DigestType, FilemapEntry, FrameEntry, HashAlgorithm, PublicKey, Signature,
+	SignatureScheme, SignatureType, Timestamp, ZarcDirectory, ZarcDirectoryHeader, ZarcEofTrailer,
+	FILE_MAGIC, ZARC_DIRECTORY_VERSION,
 };
 use crate::map_zstd_error;
 
@@ -374,8 +374,14 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		let signature = self.key.try_sign(digest).map_err(|err| Error::other(err))?;
 		tracing::trace!(?signature, "signed directory hash");
 
-		let header =
-			ZarcDirectoryHeader::new(directory_bytes.len(), digest.to_vec(), signature.to_vec())?;
+		let header = ZarcDirectoryHeader::new(
+			directory_bytes.len(),
+			DigestType::Blake3,
+			SignatureType::Ed25519,
+			digest.to_vec(),
+			public_key.clone(),
+			signature.to_vec(),
+		)?;
 		tracing::trace!(?header, "built directory header");
 
 		let header_bytes = header.to_bytes()?;

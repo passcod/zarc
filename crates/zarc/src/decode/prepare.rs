@@ -287,15 +287,15 @@ impl<R: OnDemand> Decoder<R> {
 
 			trace!("verify directory signature");
 			if !directory.signature_scheme.verify_data(
-				&directory.public_key,
-				&header.sig,
-				header.hash.as_slice(),
+				&header.public_key,
+				&header.signature,
+				header.digest.as_slice(),
 			) {
 				return Err(ErrorKind::DirectoryIntegrity("signature").into());
 			}
 
 			trace!("verify directory hash");
-			if !directory.hash_algorithm.verify_data(&header.hash, &data) {
+			if !directory.hash_algorithm.verify_data(&header.digest, &data) {
 				return Err(ErrorKind::DirectoryIntegrity("digest").into());
 			}
 
