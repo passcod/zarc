@@ -65,88 +65,10 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		tracing::trace!("create zstd context");
 		let mut zstd =
 			CCtx::try_create().ok_or_else(|| Error::other("failed allocating zstd context"))?;
+		zstd.init(0).map_err(map_zstd_error)?;
 
 		tracing::trace!("write zarc magic");
 		let mut offset = writer.write(&FILE_MAGIC)?;
-
-		// zstd's block api is deprecated, so we have to do this bit manually:
-		// compress the defensive header text into a buffer, then parse it to
-		// obtain the compressed blocks, and reframe it into the zarc format.
-		tracing::trace!("write zarc unintended magic");
-		{
-			tracing::trace!("initialise zstd session");
-			zstd.init(20).map_err(map_zstd_error)?;
-			// explicitly turn checksums off so we don't have to recompute it
-			zstd.set_parameter(ZstdParameter::ChecksumFlag(false))
-				.map_err(map_zstd_error)?;
-
-			// write compressed frame to buf
-			let mut buf: Vec<u8> = Vec::with_capacity(defensive_header.len() + 1024);
-			tracing::trace!("compress unintended magic");
-			zstd.compress2(&mut buf, defensive_header.as_bytes())
-				.map_err(map_zstd_error)?;
-
-			// parse frame manually
-			tracing::trace!(
-				bytes = %format!("{buf:02x?}"),
-				length = %buf.len(),
-				buffer = %buf.capacity(),
-				"reparse frame"
-			);
-			let ((rest, _), mut frame) = ozarc::framing::ZstandardFrame::from_bytes((&buf, 0))?;
-			tracing::trace!(
-				?frame,
-				rest = %format!("{rest:02x?}"),
-				"reparsed zstd frame for defensive header"
-			);
-			assert!(rest.is_empty(), "should parse zstd completely");
-
-			// write zarc header into raw block in position 0
-			use crate::format::{ZARC_FILE_VERSION, ZARC_MAGIC};
-			frame.blocks.insert(
-				0,
-				ozarc::framing::ZstandardBlock {
-					header: ozarc::framing::ZstandardBlockHeader::new(
-						ozarc::framing::ZstandardBlockType::Raw,
-						false,
-						4,
-					),
-					data: vec![
-						ZARC_MAGIC[0],
-						ZARC_MAGIC[1],
-						ZARC_MAGIC[2],
-						ZARC_FILE_VERSION,
-					],
-				},
-			);
-			// write zero-length null-byte RLE in position 1
-			frame.blocks.insert(
-				1,
-				ozarc::framing::ZstandardBlock {
-					header: ozarc::framing::ZstandardBlockHeader::new(
-						ozarc::framing::ZstandardBlockType::Rle,
-						false,
-						0,
-					),
-					data: vec![0],
-				},
-			);
-			// add 4 to the frame content size
-			frame.header.frame_content_size[0] += 4;
-
-			// write edited frame
-			let bytes = frame.to_bytes()?;
-			tracing::trace!(
-				?frame,
-				bytes = %format!("{bytes:02x?}"),
-				length = bytes.len(),
-				"write edited frame for defensive header"
-			);
-			offset += writer.write(&bytes)?;
-		}
-
-		// reset zstd to defaults
-		zstd.init(0).map_err(map_zstd_error)?;
 
 		Ok(Self {
 			writer,
@@ -348,11 +270,9 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		let mut framelist: Vec<FrameEntry> =
 			std::mem::take(&mut self.framelist).into_values().collect();
 		framelist.sort_by_key(|entry| entry.offset);
+
 		let directory = ZarcDirectory {
-			version: ZARC_DIRECTORY_VERSION,
-			hash_algorithm: HashAlgorithm::Blake3,
-			signature_scheme: SignatureScheme::Ed25519,
-			public_key: public_key.clone(),
+			meta: header,
 			written_at: Timestamp::now(),
 			user_metadata: Default::default(),
 			prior_versions: None,
@@ -374,37 +294,18 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		let signature = self.key.try_sign(digest).map_err(|err| Error::other(err))?;
 		tracing::trace!(?signature, "signed directory hash");
 
-		let header = ZarcDirectoryHeader::new(
-			directory_bytes.len(),
+		let bytes = self.write_compressed_frame(&directory_bytes)?;
+		tracing::trace!(%bytes, "wrote directory");
+
+		let trailer = ZarcTrailer::new(
 			DigestType::Blake3,
 			SignatureType::Ed25519,
-			digest.to_vec(),
 			public_key.clone(),
+			directory_bytes.len(),
+			digest.to_vec(),
 			signature.to_vec(),
-		)?;
-		tracing::trace!(?header, "built directory header");
-
-		let header_bytes = header.to_bytes()?;
-		tracing::trace!(
-			bytes = %format!("{header_bytes:02x?}"),
-			length = %header_bytes.len(),
-			"serialised directory header"
+			self.offset,
 		);
-
-		// write directory header
-		let mut directory_frames_size = self.write_skippable_frame(0xF, header_bytes)?;
-		tracing::trace!(%directory_frames_size, "wrote directory header");
-
-		// write directory
-		directory_frames_size += self.write_compressed_frame(&directory_bytes)?;
-		tracing::trace!(%directory_frames_size, "wrote directory frame");
-
-		// write trailer
-		let trailer = ZarcEofTrailer {
-			directory_frames_size: directory_frames_size
-				.try_into()
-				.map_err(|err| Error::other(err))?,
-		};
 		tracing::trace!(?trailer, "built trailer");
 
 		let trailer_bytes = trailer.to_bytes()?;
@@ -414,8 +315,8 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 			"serialised trailer"
 		);
 
-		assert_eq!(self.write_skippable_frame(0xE, trailer_bytes)?, 16);
-		tracing::trace!("wrote trailer");
+		let bytes = self.write_skippable_frame(0xF, trailer_bytes)?;;
+		tracing::trace!(%bytes, "wrote trailer");
 
 		self.writer.flush()?;
 		tracing::trace!("flushed writer");
