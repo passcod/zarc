@@ -93,32 +93,24 @@ These are zero or more Zstandard frames, containing actual file content.
 
 This is a Zstandard frame.
 
-It contains a stream of length-prefixed type-tagged [CBOR](https://cbor.io)-encoded structures.
+It contains a stream of [CBOR](https://cbor.io)-encoded Elements, which are framed with a Kind and a length.
 
-| **`Type`** | **`Length of Payload`** | **`Payload`** |
-|:-:|:-:|:-:|
-| little-endian 16-bit unsigned | little-endian 32-bit unsigned | CBOR |
+| **`Kind`** | **`Length of Payload`** | _reserved_ | **`Payload`** |
+|:----------:|:-----------------------:|:----------:|:-------------:|
+|    LE U8   |         LE U16          |   1 byte   |      CBOR     |
 
-Types are described below, along with their integer and payload structure.
-Types can behave in one of three ways when more than one of them is in the directory:
-- **first-wins**: the first value found is the one in vigueur, subsequent ones for this Type are disregarded;
-- **last-wins**: the last value found wins out, previous ones for this Type are discarded;
-- **collect-up**: all the values build up to a collection of values.
-  It is implementation-defined what these collections are, e.g. lists or trees or hashmaps.
-  Order is insignificant unless stated.
+Element Kinds are described below, along with their integer and CBOR payload structure.
+Elements of a same Kind are NOT required to be next to each other.
+Order is insignificant unless stated.
 
-Structures of a same Type are NOT required to be next to each other.
+Implementations MUST ignore Element Kinds they do not recognise.
 
-> **Non-normative implementation note:** If such control is possible, an implementation may consider writing the Type `1` structure as a `Raw` (uncompressed) block, to make it possible to verify that it matches the header without starting a decompression session.
+> **Non-normative note:** the _reserved_ byte is there mainly for possible expansion of the payload length.
+> 64K per element looks pretty large from here, but who knows what the future brings.
 
-Types `0` through `1023` are for core Zarc types in this spec and future versions of this spec.
-Types `32768` through `65535` are private use and may be used freely for implementation- or user-defined semantics.
-All other types are reserved.
-Implementations MUST ignore Types they do not recognise.
+### Kind `1`: Editions
 
-### Type `1`: Editions
-
-_Map: unsigned integer keys -> CBOR._ **Mandatory, collect-up.**
+_Map: unsigned integer keys -> CBOR._
 
 Editions record core metadata about an archive, and also provide a mechanism for retaining the metadata of _previous versions_ of the archive, if it gets appended or edited.
 At least one edition must be present.
@@ -166,9 +158,9 @@ _Map: text string keys -> boolean or text or byte string._ **Optional.**
 
 User metadata of this edition.
 
-### Type `2`: Files
+### Kind `2`: Files
 
-_Map: unsigned integer keys -> CBOR._ **Mandatory, collect-up.**
+_Map: unsigned integer keys -> CBOR._
 
 #### Key `0`: Edition
 
@@ -351,7 +343,7 @@ Zarc imposes no restriction on the format of attribute names, nor on the content
 Implementations MAY ignore extended attributes if obtaining or setting them is impossible or impractical.
 On Linux, implementations MAY assume a `user` namespace for unprefixed keys.
 
-### Type `3`: Frames
+### Kind `3`: Frames
 
 _Map: unsigned integer keys -> CBOR._ **Mandatory, collect-up.**
 

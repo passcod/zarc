@@ -38,6 +38,11 @@ pub const SKIPPABLE_FRAME_MAGIC: &'static [u8] = b"\x2A\x4D\x18";
 /// Magic number for a [Zstandard Frame](ZstandardFrame).
 pub const ZSTANDARD_FRAME_MAGIC: &'static [u8] = b"\x28\xB5\x2F\xFD";
 
+/// The overhead of a [Skippable Frame](SkippableFrame) in bytes.
+///
+/// This is the size of the magic and size fields.
+pub const SKIPPABLE_FRAME_OVERHEAD: usize = 8;
+
 /// A "Skippable" frame.
 ///
 /// [Spec](https://datatracker.ietf.org/doc/html/rfc8878#name-skippable-frames)

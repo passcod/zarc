@@ -8,12 +8,19 @@
 #![deny(rust_2018_idioms)]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
+#[doc(inline)]
+pub use self::constants::*;
+mod constants;
+
 pub mod decode;
+pub mod directory;
 pub mod encode;
-pub mod format;
+pub mod header;
+pub mod integrity;
 #[cfg(feature = "metadata")]
 pub mod metadata;
 pub mod ondemand;
+pub mod trailer;
 
 pub(crate) fn map_zstd_error(code: usize) -> std::io::Error {
 	let msg = zstd_safe::get_error_name(code);

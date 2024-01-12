@@ -1,19 +1,15 @@
 //! Decoder types and functions.
 
-use std::{
-	collections::HashMap,
-	num::{NonZeroU64, NonZeroU8},
-	rc::Rc,
-};
+use std::{collections::HashMap, rc::Rc};
 
 use crate::{
-	format::{
-		Digest, DigestType, FilemapEntry, Signature, SignatureType, ZarcDirectory, ZarcTrailer,
-	},
+	directory::{File, LegacyDirectory},
+	integrity::Digest,
 	ondemand::OnDemand,
+	trailer::Trailer,
 };
 
-use self::{error::Result, prepare::FrameLookupEntry};
+use self::directory::FrameLookupEntry;
 
 #[cfg_attr(feature = "expose-internals", visibility::make(pub))]
 #[doc(inline)]
@@ -22,9 +18,10 @@ pub(crate) use self::zstd_iterator::ZstdFrameIterator;
 #[doc(inline)]
 pub use self::frame_iterator::FrameIterator;
 
+mod directory;
 pub mod error;
 mod frame_iterator;
-mod prepare;
+mod open;
 mod zstd_iterator;
 
 /// Decoder context.
@@ -34,16 +31,14 @@ mod zstd_iterator;
 pub struct Decoder<R> {
 	reader: R,
 
-	/// File version number, once known. At this point only one version is supported, so this is
-	/// mostly used to check that the other file version fields in the various headers match it.
-	file_version: Option<NonZeroU8>,
+	/// Length of the file in bytes.
+	file_length: u64,
 
-	/// Offset to the Directory frame
-	directory_offset: Option<NonZeroU64>,
-
-	/// Zarc Directory Header, once known. This contains the digest and signature of the directory,
-	/// so it's needed to verify the directory integrity.
-	directory_header: Option<Rc<ZarcTrailer>>,
+	/// Trailer, once known.
+	///
+	/// This contains the digest and signature of the directory, so it's needed to verify the
+	/// directory integrity.
+	trailer: Trailer,
 
 	/// This maps digests to frame offsets and uncompressed sizes, so reading from the directory is
 	/// not required to extract a frame given its digest.
@@ -51,54 +46,24 @@ pub struct Decoder<R> {
 
 	/// Zarc Directory, if keeping it in memory. This is only done if the directory decompresses in
 	/// one step, which is the case for small to medium archives (about <128KiB of directory).
-	directory: Option<Rc<ZarcDirectory>>,
+	directory: Option<Rc<LegacyDirectory>>,
 }
 
 impl<R: OnDemand> Decoder<R> {
-	/// Create a new decoder.
-	pub fn new(reader: R) -> Result<Self> {
-		Ok(Self {
-			reader,
-			file_version: None,
-			directory_offset: None,
-			directory_header: None,
-			frame_lookup: HashMap::new(),
-			directory: None,
-		})
+	/// Length of the file in bytes.
+	pub fn file_length(&self) -> u64 {
+		self.file_length
 	}
 
-	/// Return the file version of the decoder.
-	///
-	/// This is known once the header has been read.
-	pub fn file_version(&self) -> Option<u8> {
-		self.file_version.map(NonZeroU8::get)
-	}
-
-	/// Return the directory digest.
-	///
-	/// This is known once the directory has been read.
-	pub fn directory_digest(&self) -> Option<(DigestType, &Digest)> {
-		todo!()
-	}
-
-	/// Return the directory signature.
-	///
-	/// This is known once the directory has been read.
-	pub fn directory_signature(&self) -> Option<(SignatureType, &Signature)> {
-		todo!()
-	}
-
-	/// Return the directory size (uncompressed).
-	///
-	/// This is known once the directory header has been read.
-	pub fn directory_size(&self) -> Option<u64> {
-		todo!()
+	/// The trailer metadata.
+	pub fn trailer(&self) -> &Trailer {
+		&self.trailer
 	}
 
 	/// Iterate through the filemap.
 	///
 	/// TODO: Really this should be an iterator.
-	pub fn with_filemap(&self, fun: impl Fn(&FilemapEntry)) {
+	pub fn with_filemap(&self, fun: impl Fn(&File)) {
 		if let Some(directory) = self.directory.as_ref().map(|dh| Rc::clone(dh)) {
 			for entry in directory.filemap.iter() {
 				fun(entry);

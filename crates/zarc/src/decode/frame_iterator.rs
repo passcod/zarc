@@ -2,12 +2,9 @@
 
 use std::io::{Read, Seek};
 
-use crate::{format::Digest, ondemand::OnDemand};
+use crate::{integrity::Digest, ondemand::OnDemand};
 
-use super::{
-	error::{ErrorKind, Result},
-	Decoder, ZstdFrameIterator,
-};
+use super::{error::Result, Decoder, ZstdFrameIterator};
 
 impl<R: OnDemand> Decoder<R> {
 	/// Decompress a content frame by digest.
@@ -24,17 +21,6 @@ impl<R: OnDemand> Decoder<R> {
 
 		if entry.offset == 12 {
 			// this is the unintended magic frame, which is not a content frame
-			return Ok(None);
-		}
-
-		let Some(directory_offset) = self.directory_offset else {
-			return Err(ErrorKind::ReadOrderViolation(
-				"content frames cannot be read before directory header",
-			)
-			.into());
-		};
-		if entry.offset == directory_offset.get() {
-			// this is the directory frame, which is not a content frame
 			return Ok(None);
 		}
 

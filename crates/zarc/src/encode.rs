@@ -9,15 +9,18 @@ use std::{
 
 use deku::DekuContainerWrite;
 use ed25519_dalek::{Signer, SigningKey};
+use ozarc::framing::SKIPPABLE_FRAME_OVERHEAD;
 use zstd_safe::{CCtx, ResetDirective};
 pub use zstd_safe::{CParameter as ZstdParameter, Strategy as ZstdStrategy};
 
-use crate::format::{
-	Digest, DigestType, Edition, FilemapEntry, FrameEntry, PublicKey, Signature, SignatureType,
-	Timestamp, ZarcDirectory, ZarcTrailer, FILE_MAGIC, ZARC_DIRECTORY_VERSION, ZARC_FILE_VERSION,
-	ZARC_MAGIC,
+use crate::{
+	constants::{ZARC_DIRECTORY_VERSION, ZARC_FILE_VERSION},
+	directory::{Edition, File, Frame, LegacyDirectory, Timestamp},
+	header::FILE_MAGIC,
+	integrity::{Digest, DigestType, PublicKey, Signature, SignatureType},
+	map_zstd_error,
+	trailer::Trailer,
 };
-use crate::map_zstd_error;
 
 /// Zarc encoder context.
 pub struct Encoder<'writer, W: Write> {
@@ -25,8 +28,8 @@ pub struct Encoder<'writer, W: Write> {
 	zstd: CCtx<'writer>,
 	key: SigningKey,
 	edition: NonZeroU16,
-	filemap: Vec<FilemapEntry>,
-	framelist: HashMap<Digest, FrameEntry>,
+	filemap: Vec<File>,
+	framelist: HashMap<Digest, Frame>,
 	offset: usize,
 	compress: bool,
 }
@@ -229,7 +232,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		// push frame to list
 		self.framelist.insert(
 			digest.clone(),
-			FrameEntry {
+			Frame {
 				edition: self.edition,
 				offset: offset.try_into().map_err(|err| Error::other(err))?,
 				frame_hash: digest.clone(),
@@ -245,7 +248,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 	/// Add a file entry.
 	// TODO: more ergonomic APIs, e.g. from a File
 	// TODO: builder API for user metadata?
-	pub fn add_file_entry(&mut self, entry: FilemapEntry) -> Result<()> {
+	pub fn add_file_entry(&mut self, entry: File) -> Result<()> {
 		if let Some(hash) = &entry.frame_hash {
 			if !self.framelist.contains_key(hash) {
 				return Err(Error::other(
@@ -266,11 +269,10 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 	pub fn finalise(mut self) -> Result<PublicKey> {
 		let public_key = PublicKey(self.key.verifying_key().as_bytes().to_vec());
 
-		let mut framelist: Vec<FrameEntry> =
-			std::mem::take(&mut self.framelist).into_values().collect();
+		let mut framelist: Vec<Frame> = std::mem::take(&mut self.framelist).into_values().collect();
 		framelist.sort_by_key(|entry| entry.offset);
 
-		let directory = ZarcDirectory {
+		let directory = LegacyDirectory {
 			editions: vec![Edition {
 				number: self.edition,
 				written_at: Timestamp::now(),
@@ -300,18 +302,18 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		let bytes = self.write_compressed_frame(&directory_bytes)?;
 		tracing::trace!(%bytes, "wrote directory");
 
-		let trailer = ZarcTrailer {
-			magic: ZARC_MAGIC.to_vec(),
+		let mut trailer = Trailer {
 			file_version: ZARC_FILE_VERSION,
 			directory_version: ZARC_DIRECTORY_VERSION,
 			digest_type: DigestType::Blake3,
 			signature_type: SignatureType::Ed25519,
-			directory_length: bytes as _,
+			directory_offset: 0,
 			directory_uncompressed_size: directory_bytes.len() as _,
 			public_key: public_key.clone().into(),
 			digest: Digest(digest.to_vec()),
 			signature: Signature(signature.to_vec()),
 		};
+		trailer.directory_offset = -((bytes + SKIPPABLE_FRAME_OVERHEAD + trailer.len()) as i64);
 		tracing::trace!(?trailer, "built trailer");
 
 		let trailer_bytes = trailer.to_bytes()?;

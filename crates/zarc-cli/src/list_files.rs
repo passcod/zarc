@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::{Parser, ValueHint};
 use regex::Regex;
 use tracing::info;
-use zarc::{decode::Decoder, format::SpecialFileKind};
+use zarc::{decode::Decoder, directory::SpecialFileKind};
 
 #[derive(Debug, Clone, Parser)]
 pub struct ListFilesArgs {
@@ -33,13 +33,7 @@ pub struct ListFilesArgs {
 
 pub(crate) fn list_files(args: ListFilesArgs) -> miette::Result<()> {
 	info!("initialise decoder");
-	let mut zarc = Decoder::new(args.input)?;
-
-	info!("prepare and check the file");
-	zarc.prepare()?;
-
-	// drop the mutability once we don't need it
-	let zarc = zarc;
+	let zarc = Decoder::open(args.input)?;
 
 	info!("list files");
 	zarc.with_filemap(|entry| {

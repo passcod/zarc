@@ -1,3 +1,5 @@
+//! Types supporting file integrity (checksums and signatures).
+
 use deku::prelude::*;
 use minicbor::{data::Type, Decode, Decoder, Encode, Encoder};
 

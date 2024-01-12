@@ -23,13 +23,7 @@ pub struct UnpackArgs {
 
 pub(crate) fn unpack(args: UnpackArgs) -> miette::Result<()> {
 	info!("initialise decoder");
-	let mut zarc = Decoder::new(args.input)?;
-
-	info!("prepare and check the file");
-	zarc.prepare()?;
-
-	// drop the mutability once we don't need it
-	let zarc = zarc;
+	let zarc = Decoder::open(args.input)?;
 
 	zarc.with_filemap(|entry| {
 		let name = entry.name.to_path().display().to_string();

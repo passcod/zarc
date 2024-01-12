@@ -166,7 +166,7 @@ impl ErrorKind {
 			)),
 			ErrorKind::UnsupportedFileVersion(version) => Cow::Owned(format!(
 				"unsupported zarc file version {version}, this zarc supports versions {:?}",
-				[crate::format::ZARC_FILE_VERSION]
+				[crate::constants::ZARC_FILE_VERSION]
 			)),
 			ErrorKind::ReadOrderViolation(what) => {
 				Cow::Owned(format!("read order violation: {what}"))

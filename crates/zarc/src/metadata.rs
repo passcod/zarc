@@ -10,9 +10,12 @@ use std::{
 
 use tracing::{error, instrument, trace};
 
-use crate::format::{
-	AttributeValue, CborString, Digest, FilemapEntry, Pathname, PosixOwner, SpecialFile,
-	SpecialFileKind, Timestamp, Timestamps,
+use crate::{
+	directory::{
+		AttributeValue, CborString, File, Pathname, PosixOwner, SpecialFile, SpecialFileKind,
+		Timestamp, Timestamps,
+	},
+	integrity::Digest,
 };
 
 /// Build a [`FilemapEntry`] from a filename.
@@ -29,7 +32,7 @@ pub fn build_filemap(
 	path: &Path,
 	follow_links: bool,
 	frame_hash: Option<Digest>,
-) -> Result<FilemapEntry> {
+) -> Result<File> {
 	let name = Pathname::from_normal_components(path);
 
 	trace!("reading immediate metadata");
@@ -53,7 +56,7 @@ pub fn build_filemap(
 
 	let file_type = meta.file_type();
 
-	Ok(FilemapEntry {
+	Ok(File {
 		edition,
 		frame_hash,
 		name,

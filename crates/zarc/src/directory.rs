@@ -1,13 +1,17 @@
 //! Common types defining the binary format structures.
 
+#[doc(hidden)]
+pub use self::legacy::*;
+mod legacy;
+
 #[doc(inline)]
-pub use self::constants::*;
+pub use self::edition::*;
 #[doc(inline)]
-pub use self::directory::*;
+pub use self::elements::*;
 #[doc(inline)]
-pub use self::header::*;
+pub use self::file::*;
 #[doc(inline)]
-pub use self::integrity::*;
+pub use self::frame::*;
 #[doc(inline)]
 pub use self::posix_owner::*;
 #[doc(inline)]
@@ -16,15 +20,12 @@ pub use self::specials::*;
 pub use self::strings::*;
 #[doc(inline)]
 pub use self::timestamps::*;
-#[doc(inline)]
-pub use self::trailer::*;
 
-mod constants;
-mod directory;
-mod header;
-mod integrity;
+mod edition;
+mod elements;
+mod file;
+mod frame;
 mod posix_owner;
 mod specials;
 mod strings;
 mod timestamps;
-mod trailer;
