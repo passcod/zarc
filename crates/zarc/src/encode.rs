@@ -1,21 +1,24 @@
 //! Encoder types and functions.
 
 use std::{
-	collections::HashMap,
+	collections::{BTreeMap, HashMap},
 	fmt,
 	io::{Error, Result, Write},
+	mem::take,
 	num::NonZeroU16,
 };
 
+use blake3::Hasher;
 use deku::DekuContainerWrite;
 use ed25519_dalek::{Signer, SigningKey};
 use ozarc::framing::SKIPPABLE_FRAME_OVERHEAD;
+use tracing::{debug, trace};
 use zstd_safe::{CCtx, ResetDirective};
 pub use zstd_safe::{CParameter as ZstdParameter, Strategy as ZstdStrategy};
 
 use crate::{
 	constants::{ZARC_DIRECTORY_VERSION, ZARC_FILE_VERSION},
-	directory::{Edition, File, Frame, LegacyDirectory, Timestamp},
+	directory::{Edition, Element, ElementFrame, File, Frame, Pathname, Timestamp},
 	header::FILE_MAGIC,
 	integrity::{Digest, DigestType, PublicKey, Signature, SignatureType},
 	map_zstd_error,
@@ -28,8 +31,10 @@ pub struct Encoder<'writer, W: Write> {
 	zstd: CCtx<'writer>,
 	key: SigningKey,
 	edition: NonZeroU16,
-	filemap: Vec<File>,
-	framelist: HashMap<Digest, Frame>,
+	files: Vec<Option<File>>,
+	frames: HashMap<Digest, Frame>,
+	files_by_name: BTreeMap<Pathname, Vec<usize>>,
+	files_by_digest: HashMap<Digest, Vec<usize>>,
 	offset: usize,
 	compress: bool,
 }
@@ -41,8 +46,8 @@ impl<W: Write + fmt::Debug> fmt::Debug for Encoder<'_, W> {
 			.field("zstd", &"zstd-safe compression context")
 			.field("key", &self.key)
 			.field("edition", &self.edition)
-			.field("filemap", &self.filemap)
-			.field("framelist", &self.framelist)
+			.field("filemap", &self.files)
+			.field("framelist", &self.frames)
 			.field("offset", &self.offset)
 			.field("compress", &self.compress)
 			.finish()
@@ -57,18 +62,18 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		writer: &'writer mut W,
 		csrng: &mut R,
 	) -> Result<Self> {
-		tracing::trace!("generate signing key");
+		trace!("generate signing key");
 		let key = SigningKey::generate(csrng);
 		if key.verifying_key().is_weak() {
 			return Err(Error::other("signing key is weak"));
 		}
 
-		tracing::trace!("create zstd context");
+		trace!("create zstd context");
 		let mut zstd =
 			CCtx::try_create().ok_or_else(|| Error::other("failed allocating zstd context"))?;
 		zstd.init(0).map_err(map_zstd_error)?;
 
-		tracing::trace!("write zarc magic");
+		trace!("write zarc magic");
 		let offset = writer.write(&FILE_MAGIC)?;
 
 		Ok(Self {
@@ -76,8 +81,10 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 			zstd,
 			key,
 			edition: unsafe { NonZeroU16::new_unchecked(1) },
-			filemap: Vec::new(),
-			framelist: HashMap::new(),
+			files: Vec::new(),
+			frames: HashMap::new(),
+			files_by_name: BTreeMap::new(),
+			files_by_digest: HashMap::new(),
 			offset,
 			compress: true,
 		})
@@ -112,7 +119,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		// start with a buffer slightly larger than the input
 		let mut buffer: Vec<u8> = Vec::with_capacity(data.len() + 1024.max(data.len() / 10));
 
-		tracing::trace!(
+		trace!(
 			bytes = %format!("{data:02x?}"),
 			length = %data.len(),
 			buffer_size = %buffer.capacity(),
@@ -122,7 +129,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 			.compress2(&mut buffer, data)
 			.map_err(map_zstd_error)?;
 
-		tracing::trace!(
+		trace!(
 			bytes = %format!("{buffer:02x?}"),
 			length = %buffer.len(),
 			"write buffer to writer"
@@ -171,7 +178,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 
 	// we write skippable frames manually as zstd-safe doesn't have an api
 	fn write_skippable_frame(&mut self, magic: u8, data: Vec<u8>) -> Result<usize> {
-		tracing::trace!(
+		trace!(
 			bytes = %format!("{data:02x?}"),
 			length = %data.len(),
 			magic,
@@ -180,7 +187,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		let frame = ozarc::framing::SkippableFrame::new(magic, data);
 		let buffer = frame.to_bytes()?;
 
-		tracing::trace!(
+		trace!(
 			bytes = %format!("{buffer:02x?}"),
 			length = %buffer.len(),
 			"write buffer to writer"
@@ -201,7 +208,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		let digest = blake3::hash(&content);
 		let digest = Digest(digest.as_bytes().to_vec());
 
-		if self.framelist.contains_key(&digest) {
+		if self.frames.contains_key(&digest) {
 			return Ok(digest);
 		}
 
@@ -230,7 +237,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		self.offset += bytes;
 
 		// push frame to list
-		self.framelist.insert(
+		self.frames.insert(
 			digest.clone(),
 			Frame {
 				edition: self.edition,
@@ -250,14 +257,45 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 	// TODO: builder API for user metadata?
 	pub fn add_file_entry(&mut self, entry: File) -> Result<()> {
 		if let Some(hash) = &entry.frame_hash {
-			if !self.framelist.contains_key(hash) {
+			if !self.frames.contains_key(hash) {
 				return Err(Error::other(
 					"cannot add file entry referencing unknown data frame",
 				));
 			}
 		}
 
-		self.filemap.push(entry);
+		let name = entry.name.clone();
+		let digest = entry.frame_hash.clone();
+
+		self.files.push(Some(entry));
+		let index = self.files.len() - 1;
+		trace!(index, "added file entry");
+
+		self.files_by_name
+			.entry(name)
+			.or_insert_with(Vec::new)
+			.push(index);
+		if let Some(digest) = digest {
+			self.files_by_digest
+				.entry(digest)
+				.or_insert_with(Vec::new)
+				.push(index);
+		}
+
+		Ok(())
+	}
+
+	fn write_element(buf: &mut Vec<u8>, hasher: &mut Hasher, element: &Element) -> Result<()> {
+		let frame = ElementFrame::create(element).map_err(Error::other)?;
+		let bytes = frame.to_bytes().map_err(Error::other)?;
+		buf.write_all(&bytes)?;
+		hasher.update(&bytes);
+		trace!(
+			kind = ?element.kind(),
+			length = %bytes.len(),
+			bytes = %format!("{bytes:02x?}"),
+			"wrote element"
+		);
 		Ok(())
 	}
 
@@ -267,67 +305,88 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 	///
 	/// Discards the private key and returns the public key.
 	pub fn finalise(mut self) -> Result<PublicKey> {
+		let mut directory = Vec::new();
+		let mut hasher = Hasher::new();
+
 		let public_key = PublicKey(self.key.verifying_key().as_bytes().to_vec());
+		let digest_type = DigestType::Blake3;
+		let signature_type = SignatureType::Ed25519;
 
-		let mut framelist: Vec<Frame> = std::mem::take(&mut self.framelist).into_values().collect();
-		framelist.sort_by_key(|entry| entry.offset);
-
-		let directory = LegacyDirectory {
-			editions: vec![Edition {
+		Self::write_element(
+			&mut directory,
+			&mut hasher,
+			&Element::Edition(Edition {
 				number: self.edition,
-				written_at: Timestamp::now(),
-				user_metadata: Default::default(),
-				digest_type: DigestType::Blake3,
-				signature_type: SignatureType::Ed25519,
 				public_key: public_key.clone(),
-			}],
-			filemap: std::mem::take(&mut self.filemap),
-			framelist,
-		};
-		tracing::trace!(?directory, "built directory");
+				written_at: Timestamp::now(),
+				digest_type,
+				signature_type,
+				user_metadata: Default::default(),
+			}),
+		)?;
 
-		let directory_bytes = minicbor::to_vec(&directory).map_err(Error::other)?;
-		tracing::trace!(
-			bytes = %format!("{directory_bytes:02x?}"),
-			length = %directory_bytes.len(),
-			"serialised directory"
-		);
+		for (name, indices) in take(&mut self.files_by_name) {
+			debug!(?name, "write file and frame elements");
 
-		let digest = blake3::hash(&directory_bytes);
-		tracing::trace!(?digest, "hashed directory");
+			for index in indices {
+				let Some(file) = self.files.get_mut(index).and_then(Option::take) else {
+					// this shouldn't happen, but it's cheap to just skip instead of unwrapping
+					continue;
+				};
+
+				// we always want to insert a frame element before the linked file element
+				if let Some(digest) = &file.frame_hash {
+					// if we've already written it, this will be None
+					if let Some(frame) = self.frames.remove(digest) {
+						Self::write_element(&mut directory, &mut hasher, &Element::Frame(frame))?;
+					}
+				}
+
+				Self::write_element(&mut directory, &mut hasher, &Element::File(file))?;
+			}
+		}
+
+		// we should have written every frame, but just in case
+		// (or if user inserted frames not linked to files)
+		for frame in take(&mut self.frames).into_values() {
+			Self::write_element(&mut directory, &mut hasher, &Element::Frame(frame))?;
+		}
+
+		let digest = hasher.finalize();
+		trace!(?digest, "hashed directory");
 		let digest = digest.as_bytes();
 		let signature = self.key.try_sign(digest).map_err(|err| Error::other(err))?;
-		tracing::trace!(?signature, "signed directory hash");
+		trace!(?signature, "signed directory hash");
 
-		let bytes = self.write_compressed_frame(&directory_bytes)?;
-		tracing::trace!(%bytes, "wrote directory");
+		let bytes = self.write_compressed_frame(&directory)?;
+		trace!(%bytes, "wrote directory");
 
 		let mut trailer = Trailer {
 			file_version: ZARC_FILE_VERSION,
 			directory_version: ZARC_DIRECTORY_VERSION,
-			digest_type: DigestType::Blake3,
-			signature_type: SignatureType::Ed25519,
+			digest_type,
+			signature_type,
 			directory_offset: 0,
-			directory_uncompressed_size: directory_bytes.len() as _,
+			directory_uncompressed_size: directory.len() as _,
 			public_key: public_key.clone().into(),
 			digest: Digest(digest.to_vec()),
 			signature: Signature(signature.to_vec()),
 		};
 		trailer.directory_offset = -((bytes + SKIPPABLE_FRAME_OVERHEAD + trailer.len()) as i64);
-		tracing::trace!(?trailer, "built trailer");
+		trace!(?trailer, "built trailer");
 
 		let trailer_bytes = trailer.to_bytes();
-		tracing::trace!(
+		trace!(
 			bytes = %format!("{trailer_bytes:02x?}"),
 			length = %trailer_bytes.len(),
 			"serialised trailer"
 		);
 
 		let bytes = self.write_skippable_frame(0xF, trailer_bytes)?;
-		tracing::trace!(%bytes, "wrote trailer");
+		trace!(%bytes, "wrote trailer");
 
 		self.writer.flush()?;
-		tracing::trace!("flushed writer");
+		trace!("flushed writer");
 
 		Ok(public_key)
 	}

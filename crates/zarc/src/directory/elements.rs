@@ -24,6 +24,29 @@ pub struct ElementFrame {
 	pub payload: Vec<u8>,
 }
 
+impl ElementFrame {
+	/// Encode an [Element] into a CBOR payload.
+	///
+	/// CBOR encoding is infallible; this returns `Err` if the element is too large to fit (>64K).
+	pub fn create(element: &Element) -> Result<Self, TryFromIntError> {
+		let payload = element.to_vec();
+		u16::try_from(payload.len()).map(|length| Self {
+			kind: element.kind(),
+			length,
+			payload,
+		})
+	}
+
+	/// Decode the CBOR payload into its [Element].
+	pub fn element(&self) -> Result<Element, minicbor::decode::Error> {
+		match self.kind {
+			ElementKind::Edition => minicbor::decode(&self.payload).map(Element::Edition),
+			ElementKind::File => minicbor::decode(&self.payload).map(Element::File),
+			ElementKind::Frame => minicbor::decode(&self.payload).map(Element::Frame),
+		}
+	}
+}
+
 /// Kind of an element (as a unit enum).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, DekuRead, DekuWrite)]
 #[deku(endian = "endian", type = "u8", ctx = "endian: deku::ctx::Endian")]
@@ -48,31 +71,24 @@ pub enum Element {
 	Frame(Frame),
 }
 
-impl ElementFrame {
-	/// Encode an [Element] into a CBOR payload.
-	///
-	/// CBOR encoding is infallible; this returns `Err` if the element is too large to fit (>64K).
-	pub fn create(element: &Element) -> Result<Self, TryFromIntError> {
-		// UNWRAP: minicbor encoding is infallible
-		let (kind, payload) = match element {
-			Element::Edition(edition) => (ElementKind::Edition, minicbor::to_vec(edition).unwrap()),
-			Element::File(file) => (ElementKind::File, minicbor::to_vec(file).unwrap()),
-			Element::Frame(frame) => (ElementKind::Frame, minicbor::to_vec(frame).unwrap()),
-		};
-
-		u16::try_from(payload.len()).map(|length| Self {
-			kind,
-			length,
-			payload,
-		})
+impl Element {
+	/// Get the [ElementKind] of this element.
+	pub fn kind(&self) -> ElementKind {
+		match self {
+			Element::Edition(_) => ElementKind::Edition,
+			Element::File(_) => ElementKind::File,
+			Element::Frame(_) => ElementKind::Frame,
+		}
 	}
 
-	/// Decode the CBOR payload into its [Element].
-	pub fn element(&self) -> Result<Element, minicbor::decode::Error> {
-		match self.kind {
-			ElementKind::Edition => minicbor::decode(&self.payload).map(Element::Edition),
-			ElementKind::File => minicbor::decode(&self.payload).map(Element::File),
-			ElementKind::Frame => minicbor::decode(&self.payload).map(Element::Frame),
+	/// Write the [Element] into a CBOR payload.
+	pub fn to_vec(&self) -> Vec<u8> {
+		// UNWRAP: minicbor encoding is infallible
+		match self {
+			Element::Edition(edition) => minicbor::to_vec(edition),
+			Element::File(file) => minicbor::to_vec(file),
+			Element::Frame(frame) => minicbor::to_vec(frame),
 		}
+		.unwrap()
 	}
 }

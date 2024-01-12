@@ -6,7 +6,7 @@ use std::{
 use minicbor::{data::Type, Decode, Decoder, Encode, Encoder};
 
 /// Pathname as components.
-#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode)]
 #[cbor(transparent)]
 pub struct Pathname(
 	/// Components of the path.
@@ -58,7 +58,7 @@ impl Pathname {
 }
 
 /// CBOR Text or Byte string.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum CborString {
 	/// UTF-8 text string value.
 	Text(String),
@@ -150,7 +150,7 @@ impl<'b, C> Decode<'b, C> for CborString {
 }
 
 /// Attributes can be booleans or text or byte strings.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum AttributeValue {
 	/// A boolean.
 	Boolean(bool),
