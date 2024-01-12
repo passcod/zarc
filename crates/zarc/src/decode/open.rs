@@ -27,7 +27,7 @@ impl<R: OnDemand> Decoder<R> {
 	fn read_skippable_frame(reader: &mut R::Reader, nibble: u8) -> Result<SkippableFrame> {
 		let (bits_read, frame) =
 			SkippableFrame::from_reader((reader, 0)).map_err(SimpleError::from_deku)?;
-		debug!(%bits_read, ?frame, nibble=%format!("0x{:X}", frame.nibble()), "read skippable frame");
+		debug!(%bits_read, frame=format!("{frame:02x?}"), nibble=%format!("0x{:X}", frame.nibble()), "read skippable frame");
 
 		if frame.nibble() != nibble {
 			return Err(ErrorKind::InvalidNibble {
@@ -52,7 +52,7 @@ impl<R: OnDemand> Decoder<R> {
 		let mut content = Cursor::new(frame.data);
 		let (bits_read, header) =
 			Header::from_reader((&mut content, 0)).map_err(SimpleError::from_deku)?;
-		debug!(%bits_read, ?header, "read zarc header");
+		debug!(%bits_read, header=format!("{header:02x?}"), "read zarc header");
 
 		debug_assert_ne!(crate::constants::ZARC_FILE_VERSION, 0);
 		debug_assert_ne!(header.file_version, 0);
@@ -80,19 +80,19 @@ impl<R: OnDemand> Decoder<R> {
 		reader.seek(SeekFrom::End(0))?;
 		let file_length = reader.stream_position()?;
 		let ending_length = file_length.min(1024);
+		trace!(%file_length, reading_bytes=%ending_length, "reading end of file");
 
 		// read up to 1KB from the end of the file
 		reader.seek(SeekFrom::End(-(ending_length as i64)))?;
 		let mut ending = Vec::with_capacity(ending_length as _);
 		let bytes = reader.read_to_end(&mut ending)?;
+		trace!(%bytes, data=%format!("{bytes:02x?}"), "read end of file");
 		debug_assert_eq!(bytes, ending_length as _);
 
 		// read the epilogue out of the end of the ending
-		let ((rest, remaining_bits), mut epilogue) =
+		let ((rest, remaining_bits), epilogue) =
 			Epilogue::from_bytes((&ending[(bytes - EPILOGUE_LENGTH)..], 0))
 				.map_err(SimpleError::from_deku)?;
-		trace!(?epilogue, "read zarc trailer epilogue (raw)");
-		epilogue.make_offset_positive(file_length);
 		debug!(?epilogue, "read zarc trailer epilogue");
 
 		if remaining_bits > 0 {
@@ -112,8 +112,8 @@ impl<R: OnDemand> Decoder<R> {
 
 		// complete reading the trailer
 		// UNWRAP: we know we have enough data, we just checked
-		let trailer = epilogue.complete(&ending).expect("not enough data");
-		debug!(bytes=%trailer.len(), ?trailer, "read zarc trailer");
+		let mut trailer = epilogue.complete(&ending).expect("not enough data");
+		debug!(bytes=%trailer.len(), trailer=format!("{trailer:02x?}"), "read zarc trailer");
 
 		// compare the check byte
 		let check_byte = trailer.compute_check();
@@ -125,6 +125,9 @@ impl<R: OnDemand> Decoder<R> {
 			))
 				.into());
 		}
+
+		trailer.make_offset_positive(file_length);
+		debug!(offset=%trailer.directory_offset, "reified directory offset");
 
 		Ok((trailer, file_length))
 	}
@@ -138,7 +141,9 @@ impl<R: OnDemand> Decoder<R> {
 	pub fn open(reader: R) -> Result<Self> {
 		let file_version = Self::read_header(&reader)?;
 		let (trailer, file_length) = Self::read_trailer(&reader)?;
-		warn!(header=%file_version, trailer=%trailer.file_version, "file version mismatch in header and trailer");
+		if file_version.get() != trailer.file_version {
+			warn!(header=%file_version, trailer=%trailer.file_version, "file version mismatch in header and trailer");
+		}
 
 		Ok(Self {
 			reader,

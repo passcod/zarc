@@ -88,6 +88,20 @@ impl Trailer {
 		self.public_key.len() + self.digest.len() + self.signature.len() + EPILOGUE_LENGTH
 	}
 
+	/// Make the offset positive.
+	///
+	/// Having the offset negative is very useful when _writing_ the trailer, but generally a pain
+	/// when using it to decode the archive, so this method inverts it given the file length.
+	///
+	/// Does nothing if the offset is already positive.
+	///
+	/// See also [`Epilogue::make_offset_positive()`].
+	pub fn make_offset_positive(&mut self, file_length: u64) {
+		if self.directory_offset < 0 {
+			self.directory_offset += file_length as i64;
+		}
+	}
+
 	/// Compute the check byte.
 	pub fn compute_check(&self) -> u8 {
 		let mut bytes = Vec::with_capacity(self.len());
@@ -214,6 +228,8 @@ impl Epilogue {
 	/// when using it to decode the archive, so this method inverts it given the file length.
 	///
 	/// Does nothing if the offset is already positive.
+	///
+	/// See also [`Trailer::make_offset_positive()`].
 	pub fn make_offset_positive(&mut self, file_length: u64) {
 		if self.directory_offset < 0 {
 			self.directory_offset += file_length as i64;
