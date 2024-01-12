@@ -260,7 +260,7 @@ fn parse_frame<'input>(
 				}) {
 					println!("  zarc directory: {bytes} bytes");
 					let directory_hash = blake3::hash(&buf);
-					let header_hash = Hash::from_bytes(hash);
+					let header_hash = blake3::Hash::from_bytes(hash);
 					if directory_hash == header_hash {
 						println!("    directory digest: valid ✅");
 					} else {

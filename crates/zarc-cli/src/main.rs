@@ -8,7 +8,7 @@ use tracing::{debug, warn};
 use crate::args::Action;
 
 mod args;
-mod debug;
+// mod debug;
 mod list_files;
 mod logs;
 mod pack;
@@ -29,7 +29,7 @@ fn main() -> miette::Result<()> {
 	debug!(?args, "got arguments");
 
 	match args.action {
-		Action::Debug(args) => debug::debug(args).into_diagnostic(),
+		// Action::Debug(args) => debug::debug(args).into_diagnostic(),
 		Action::ListFiles(args) => list_files::list_files(args),
 		Action::Pack(args) => pack::pack(args).into_diagnostic(),
 		Action::Unpack(args) => unpack::unpack(args),

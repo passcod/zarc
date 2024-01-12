@@ -2,7 +2,12 @@ use std::{fmt::Debug, path::PathBuf};
 
 use clap::{ArgAction, Parser, Subcommand, ValueHint};
 
-use crate::{debug::DebugArgs, list_files::ListFilesArgs, pack::PackArgs, unpack::UnpackArgs};
+use crate::{
+	// debug::DebugArgs,
+	list_files::ListFilesArgs,
+	pack::PackArgs,
+	unpack::UnpackArgs,
+};
 
 /// Zarc: a novel archive format and tool.
 ///
@@ -74,9 +79,8 @@ pub enum Action {
 
 	/// Walk a Zarc and print filenames.
 	ListFiles(ListFilesArgs),
-
-	/// Walk a Zarc and print detailed information about its structure.
-	Debug(DebugArgs),
+	// /// Walk a Zarc and print detailed information about its structure.
+	// Debug(DebugArgs),
 }
 
 #[test]

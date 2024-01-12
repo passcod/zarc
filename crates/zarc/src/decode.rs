@@ -8,8 +8,7 @@ use std::{
 
 use crate::{
 	format::{
-		Digest, FilemapEntry, DigestType, Signature, SignatureType, ZarcDirectory,
-		ZarcTrailer,
+		Digest, DigestType, FilemapEntry, Signature, SignatureType, ZarcDirectory, ZarcTrailer,
 	},
 	ondemand::OnDemand,
 };

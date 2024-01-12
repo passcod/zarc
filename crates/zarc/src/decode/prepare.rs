@@ -1,6 +1,6 @@
 use std::{
 	io::{Cursor, Seek, SeekFrom},
-	num::{NonZeroU64, NonZeroU8},
+	num::NonZeroU8,
 	rc::Rc,
 };
 
@@ -11,7 +11,7 @@ use ozarc::framing::{
 use tracing::{debug, instrument, trace};
 
 use crate::{
-	format::{ZarcDirectory, ZarcTrailer, ZarcHeader, FILE_MAGIC},
+	format::{ZarcDirectory, ZarcHeader, ZarcTrailer, FILE_MAGIC},
 	ondemand::OnDemand,
 };
 
@@ -184,16 +184,16 @@ impl<R: OnDemand> Decoder<R> {
 				ErrorKind::ReadOrderViolation("directory header cannot be read twice").into(),
 			);
 		};
-		let Some(file_version) = self.file_version else {
+		let Some(_file_version) = self.file_version else {
 			return Err(ErrorKind::ReadOrderViolation(
 				"directory cannot be read before file header",
 			)
 			.into());
 		};
 
-		let mut reader = self.reader.open()?;
+		let mut _reader = self.reader.open()?;
 		debug!("seek to trailer");
-		reader.seek(SeekFrom::End(todo!()))?;
+		// reader.seek(SeekFrom::End(todo!()))?;
 
 		// let frame = Self::read_skippable_frame(&mut reader, 0xF)?;
 		// let mut content = Cursor::new(frame.data);

@@ -3,18 +3,19 @@
 use std::{
 	collections::HashMap,
 	fmt,
-	io::{Error, Result, Write}, num::NonZeroU16,
+	io::{Error, Result, Write},
+	num::NonZeroU16,
 };
 
-use deku::{DekuContainerRead, DekuContainerWrite};
+use deku::DekuContainerWrite;
 use ed25519_dalek::{Signer, SigningKey};
 use zstd_safe::{CCtx, ResetDirective};
 pub use zstd_safe::{CParameter as ZstdParameter, Strategy as ZstdStrategy};
 
 use crate::format::{
-	Digest, DigestType, FilemapEntry, FrameEntry, PublicKey, Signature,
-	SignatureType, Timestamp, ZarcDirectory, ZarcTrailer,
-	FILE_MAGIC, Edition, ZARC_MAGIC, ZARC_FILE_VERSION, ZARC_DIRECTORY_VERSION,
+	Digest, DigestType, Edition, FilemapEntry, FrameEntry, PublicKey, Signature, SignatureType,
+	Timestamp, ZarcDirectory, ZarcTrailer, FILE_MAGIC, ZARC_DIRECTORY_VERSION, ZARC_FILE_VERSION,
+	ZARC_MAGIC,
 };
 use crate::map_zstd_error;
 
@@ -49,14 +50,9 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 	/// Create a new encoder and write the header.
 	///
 	/// Requires a CSRNG implementation to generate the signing key.
-	///
-	/// The `defensive_header` is a bit of text that is ignored by Zarc decoders, but may be
-	/// read and unpacked by Zstd decoders, providing a human-readable message to explain that
-	/// this is a Zarc file is and how to properly unpack it.
 	pub fn new<R: rand_core::CryptoRngCore + ?Sized>(
 		writer: &'writer mut W,
 		csrng: &mut R,
-		defensive_header: &str,
 	) -> Result<Self> {
 		tracing::trace!("generate signing key");
 		let key = SigningKey::generate(csrng);
@@ -70,7 +66,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		zstd.init(0).map_err(map_zstd_error)?;
 
 		tracing::trace!("write zarc magic");
-		let mut offset = writer.write(&FILE_MAGIC)?;
+		let offset = writer.write(&FILE_MAGIC)?;
 
 		Ok(Self {
 			writer,

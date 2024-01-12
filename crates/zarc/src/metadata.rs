@@ -4,7 +4,8 @@ use std::{
 	collections::HashMap,
 	fs::{self, Metadata},
 	io::Result,
-	path::Path, num::NonZeroU16,
+	num::NonZeroU16,
+	path::Path,
 };
 
 use tracing::{error, instrument, trace};
@@ -51,7 +52,6 @@ pub fn build_filemap(
 	trace!(?name, ?meta, "retrieved file metadata");
 
 	let file_type = meta.file_type();
-	let perms = meta.permissions();
 
 	Ok(FilemapEntry {
 		edition,

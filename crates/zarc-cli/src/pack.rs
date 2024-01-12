@@ -1,4 +1,4 @@
-use std::{fs::File, path::PathBuf};
+use std::{fs::File, num::NonZeroU16, path::PathBuf};
 
 use clap::{Parser, ValueHint};
 use rand::rngs::OsRng;
@@ -216,15 +216,13 @@ impl clap::builder::TypedValueParser for ParseZstdParam {
 	}
 }
 
-const DEFENSIVE_HEADER: &'static str = "STOP! THIS IS A ZARC ARCHIVE THAT HAS BEEN UNCOMPRESSED WITH RAW ZSTD\r\n\r\nSee https://github.com/passcod/zarc to unpack correctly.\r\n\r\n";
-
 pub(crate) fn pack(args: PackArgs) -> std::io::Result<()> {
 	info!(path=?args.output, "create output file");
 	let mut file = File::create(args.output)?;
 
 	info!("initialise encoder");
 	let mut csprng = OsRng;
-	let mut zarc = Encoder::new(&mut file, &mut csprng, &DEFENSIVE_HEADER)?;
+	let mut zarc = Encoder::new(&mut file, &mut csprng)?;
 
 	debug!("enable zstd checksums");
 	zarc.set_zstd_parameter(ZstdParameter::ChecksumFlag(true))?;
@@ -265,7 +263,12 @@ pub(crate) fn pack(args: PackArgs) -> std::io::Result<()> {
 				None
 			};
 
-			zarc.add_file_entry(build_filemap(filename, args.follow_symlinks, hash)?)?;
+			zarc.add_file_entry(build_filemap(
+				NonZeroU16::new(1).unwrap(),
+				filename,
+				args.follow_symlinks,
+				hash,
+			)?)?;
 		}
 	}
 
