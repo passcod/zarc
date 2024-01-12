@@ -410,9 +410,9 @@ It contains:
 |:----------------:|:-----------:|:---------------:|
 |     _n_ bytes    |  _n_ bytes  |    _n_ bytes    |
 
-| **`Digest Type`** | **`Signature Type`** |
-|:-----------------:|:--------------------:|
-|       1 byte      |        1 byte        |
+| **`Check Byte`** | **`Digest Type`** | **`Signature Type`** |
+|:----------------:|:-----------------:|:--------------------:|
+|      1 byte      |       1 byte      |        1 byte        |
 
 |   **`Directory Offset`**  | **`Uncompressed Length`** |
 |:-------------------------:|:-------------------------:|
@@ -465,3 +465,9 @@ Defines the algorithm used for computing signatures, as well as the length of th
 
 - `0`: not used. This value must not appear.
 - `1`: [Ed25519](https://en.wikipedia.org/wiki/EdDSA#Ed25519) signature scheme, 32-byte public key, 64-byte signature.
+
+### `Check Byte`
+
+This is the result of XOR'ing every other byte of the trailer together.
+
+It can be used as a quick check for corruption.

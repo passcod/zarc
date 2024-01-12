@@ -10,7 +10,7 @@
 //! have to come *after* the variable fields.
 //!
 //! However, reading a file backward is obnoxious and possibly slow, so the way this module works is
-//! with the [`Epilogue`], which the last seven fields of the trailer, which are all fixed-size. You
+//! with the [`Epilogue`], comprising the last eight fields of the trailer, all fixed-size. You
 //! should use [`EPILOGUE_LENGTH`] to seek and read these bytes from the end, parse them, and then
 //! use [`Epilogue::full_length()`] to seek and read the remaining bytes, and finally pass them to
 //! [`Epilogue::complete()`] to obtain a [`Trailer`].
@@ -73,42 +73,68 @@ impl Trailer {
 	}
 
 	/// Write the trailer to a vector.
-	pub fn to_bytes(&self) -> Result<Vec<u8>, DekuError> {
+	pub fn to_bytes(&self) -> Vec<u8> {
 		let mut bytes = Vec::with_capacity(self.len());
 		bytes.extend(self.public_key.iter());
 		bytes.extend(self.digest.iter());
 		bytes.extend(self.signature.iter());
-		bytes.extend(Epilogue::from(self).to_bytes()?);
-		Ok(bytes)
+		// UNWRAP: there's no way to construct an epilogue that doesn't serialise
+		bytes.extend(Epilogue::from(self).to_bytes().unwrap());
+		bytes
 	}
 
 	/// The full length of the trailer in bytes.
 	pub fn len(&self) -> usize {
 		self.public_key.len() + self.digest.len() + self.signature.len() + EPILOGUE_LENGTH
 	}
-}
 
-impl From<&Trailer> for Epilogue {
-	fn from(trailer: &Trailer) -> Self {
-		Self {
-			digest_type: trailer.digest_type,
-			signature_type: trailer.signature_type,
-			directory_offset: trailer.directory_offset,
-			directory_uncompressed_size: trailer.directory_uncompressed_size,
-			directory_version: trailer.directory_version,
-			file_version: trailer.file_version,
+	/// Compute the check byte.
+	pub fn compute_check(&self) -> u8 {
+		let mut bytes = Vec::with_capacity(self.len());
+		bytes.extend(self.public_key.iter());
+		bytes.extend(self.digest.iter());
+		bytes.extend(self.signature.iter());
+		// UNWRAP: there's no way to construct an epilogue that doesn't serialise
+		bytes.extend(self.epilogue_without_check().to_bytes().unwrap());
+		bytes.iter().fold(0, |check, x| check ^ *x)
+	}
+
+	/// Get the epilogue from this trailer, but set the check byte to 0.
+	fn epilogue_without_check(&self) -> Epilogue {
+		Epilogue {
+			check: 0,
+			digest_type: self.digest_type,
+			signature_type: self.signature_type,
+			directory_offset: self.directory_offset,
+			directory_uncompressed_size: self.directory_uncompressed_size,
+			directory_version: self.directory_version,
+			file_version: self.file_version,
 			magic: crate::ZARC_MAGIC.to_vec(),
 		}
 	}
 }
 
-/// Length of the epilogue in bytes.
-pub const EPILOGUE_LENGTH: usize = 23;
+impl From<&Trailer> for Epilogue {
+	fn from(trailer: &Trailer) -> Self {
+		let mut epilogue = trailer.epilogue_without_check();
+		epilogue.check = trailer.compute_check();
+		epilogue
+	}
+}
 
-/// The last seven fields of the trailer, which are all fixed-size.
+/// Length of the epilogue in bytes.
+///
+/// This is the wire length, not the size of the struct.
+pub const EPILOGUE_LENGTH: usize = 24;
+
+/// The last eight fields of the trailer, which are all fixed-size.
 #[derive(Clone, Debug, Eq, PartialEq, DekuRead, DekuWrite)]
 #[deku(endian = "little")]
 pub struct Epilogue {
+	/// Check byte.
+	#[deku(bytes = "1")]
+	pub check: u8,
+
 	/// Digest (hash) algorithm.
 	pub digest_type: DigestType,
 

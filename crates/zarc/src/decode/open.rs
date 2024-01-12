@@ -111,10 +111,21 @@ impl<R: OnDemand> Decoder<R> {
 		}
 
 		// complete reading the trailer
-		let trailer = epilogue.complete(&ending).expect("not enough data");
 		// UNWRAP: we know we have enough data, we just checked
-
+		let trailer = epilogue.complete(&ending).expect("not enough data");
 		debug!(bytes=%trailer.len(), ?trailer, "read zarc trailer");
+
+		// compare the check byte
+		let check_byte = trailer.compute_check();
+		if check_byte != epilogue.check {
+			return Err(SimpleError::new(ErrorKind::Parse)
+				.with_message(format!(
+				"parse error: trailer check byte doesn't match (expected 0x{:02X}, got 0x{check_byte:02X})",
+				epilogue.check
+			))
+				.into());
+		}
+
 		Ok((trailer, file_length))
 	}
 

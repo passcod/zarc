@@ -316,7 +316,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		trailer.directory_offset = -((bytes + SKIPPABLE_FRAME_OVERHEAD + trailer.len()) as i64);
 		tracing::trace!(?trailer, "built trailer");
 
-		let trailer_bytes = trailer.to_bytes()?;
+		let trailer_bytes = trailer.to_bytes();
 		tracing::trace!(
 			bytes = %format!("{trailer_bytes:02x?}"),
 			length = %trailer_bytes.len(),
