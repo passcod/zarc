@@ -225,10 +225,8 @@ The user that owns this file.
 This is a structure with at least one of the following types of data:
 
 - _Unsigned integer._ the user ID
-- _Text string._ the user name as UTF-8
-- _Byte string._ the user name as non-Unicode
+- _Text string._ the user name as UTF-8 (or ASCII)
 
-There SHOULD NOT be both _Text string_ and _Byte string_ values; if there are, the _Text string_ value wins out.
 There SHOULD NOT be more than one unsigned integer; if there are, the last value wins out.
 
 Implementations SHOULD prefer the name to the ID if there is an existing user named thus on the system with a different ID.
@@ -242,10 +240,7 @@ The group that owns this file.
 This is a structure with at least one of the following types of data:
 
 - _Unsigned integer._ the group ID
-- _Text string._ the group name as UTF-8
-- _Byte string._ the group name as non-Unicode
-
-There SHOULD NOT be both _Text string_ and _Byte string_ values. If there is, the _Text string_ value wins out.
+- _Text string._ the group name as UTF-8 (or ASCII)
 
 Implementations SHOULD prefer the name to the ID if there is an existing group named thus on the system with a different ID.
 

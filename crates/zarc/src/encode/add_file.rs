@@ -124,8 +124,8 @@ impl FileBuilder {
 	}
 
 	/// Set the user that owns the file by name.
-	pub fn user_name(&mut self, username: impl AsRef<OsStr>) -> &mut Self {
-		let name = CborString::from(username.as_ref());
+	pub fn user_name(&mut self, username: &str) -> &mut Self {
+		let name = username.to_string();
 		if let Some(user) = self.0.user.as_mut() {
 			user.name = Some(name);
 		} else {
@@ -151,8 +151,8 @@ impl FileBuilder {
 	}
 
 	/// Set the group that owns the file by name.
-	pub fn group_name(&mut self, groupname: impl AsRef<OsStr>) -> &mut Self {
-		let name = CborString::from(groupname.as_ref());
+	pub fn group_name(&mut self, groupname: &str) -> &mut Self {
+		let name = groupname.to_string();
 		if let Some(group) = self.0.group.as_mut() {
 			group.name = Some(name);
 		} else {
