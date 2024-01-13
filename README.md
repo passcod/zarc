@@ -374,6 +374,93 @@ $ dust -sbn0 node_modules.zarc
 429M ┌── node_modules.zarc
 ```
 
+### half a gig of ebooks
+
+My personal collection of ebooks: few files, but relatively heavy and tough to compress more.
+
+```console
+$ tree ~/Documents/Ebooks | wc -l
+54
+
+$ dust -sbn0 ~/Documents/Ebooks
+573M ┌── Ebooks
+
+$ find ~/Documents/Ebooks -type f -printf '%s\\n' | datamash \
+max 1           min 1   mean 1          median 1
+247604768       15116   12028762.56     711323      # in bytes
+
+$ find ~/Documents/Ebooks -type l | wc -l
+0 # symlinks
+```
+
+#### Packing speed
+
+```console
+$ hyperfine --warmup 2 \
+  --prepare 'rm ebooks.tar.zst || true' \
+    'tar -caf ebooks.tar.zst ~/Documents/Ebooks' \
+  --prepare 'rm ebooks.zip || true' \
+    'zip -qr ebooks.zip ~/Documents/Ebooks' \
+  --prepare 'rm ebooks.zarc || true' \
+    'zarc pack -L --output ebooks.zarc ~/Documents/Ebooks'
+
+Benchmark 1: tar -caf ebooks.tar.zst ~/Documents/Ebooks
+  Time (mean ± σ):      2.133 s ±  0.168 s    [User: 2.421 s, System: 1.269 s]
+  Range (min … max):    1.951 s …  2.502 s    10 runs
+
+Benchmark 2: zip -qr ebooks.zip ~/Documents/Ebooks
+  Time (mean ± σ):     23.859 s ±  1.274 s    [User: 22.202 s, System: 1.198 s]
+  Range (min … max):   21.384 s … 25.397 s    10 runs
+
+Benchmark 3: zarc pack -L --output ebooks.zarc ~/Documents/Ebooks
+  Time (mean ± σ):      2.014 s ±  0.239 s    [User: 1.282 s, System: 0.671 s]
+  Range (min … max):    1.835 s …  2.576 s    10 runs
+
+Summary
+  'zarc pack -L --output ebooks.zarc ~/Documents/Ebooks' ran
+    1.06 ± 0.15 times faster than 'tar -caf ebooks.tar.zst ~/Documents/Ebooks'
+   11.85 ± 1.54 times faster than 'zip -qr ebooks.zip ~/Documents/Ebooks'
+```
+
+#### Archive size
+
+```console
+$ dust -sbn0 ebooks.tar.zst
+476M ┌── ebooks.tar.zst
+
+$ dust -sbn0 ebooks.zip
+477M ┌── ebooks.zip
+
+$ dust -sbn0 ebooks.zarc
+478M ┌── ebooks.zarc
+```
+
+#### Listing archive contents
+
+```console
+$ hyperfine --shell=none --warmup 1 \
+  'tar tf ebooks.tar.zst' \
+  'unzip -l ebooks.zip' \
+  'zarc list-files ebooks.zarc'
+
+Benchmark 1: tar tf ebooks.tar.zst
+  Time (mean ± σ):     397.0 ms ±  21.5 ms    [User: 408.4 ms, System: 629.5 ms]
+  Range (min … max):   361.1 ms … 429.6 ms    10 runs
+
+Benchmark 2: unzip -l ebooks.zip
+  Time (mean ± σ):       2.6 ms ±   0.3 ms    [User: 1.2 ms, System: 1.2 ms]
+  Range (min … max):     2.1 ms …   5.1 ms    1018 runs
+
+Benchmark 3: zarc list-files ebooks.zarc
+  Time (mean ± σ):       2.3 ms ±   0.5 ms    [User: 1.3 ms, System: 0.8 ms]
+  Range (min … max):     1.8 ms …  13.3 ms    1164 runs
+
+Summary
+  'zarc list-files ebooks.zarc' ran
+    1.13 ± 0.26 times faster than 'unzip -l ebooks.zip'
+  173.58 ± 36.29 times faster than 'tar tf ebooks.tar.zst'
+```
+
 ## TODO
 
 - [x] `zarc pack`
@@ -395,7 +482,7 @@ $ dust -sbn0 node_modules.zarc
   - [ ] Override user/group
   - [ ] User/group mappings
 - [x] `zarc debug`
-- [ ] `zarc unpack`
+- [x] `zarc unpack`
   - [ ] `--key` to check public key matches
   - [ ] `--attest` and `--attest-file` to check external signature
   - [ ] Unpack linux attributes
@@ -409,8 +496,8 @@ $ dust -sbn0 node_modules.zarc
   - [ ] Override user/group
   - [ ] User/group mappings
 - [x] `zarc list-files`
-- [ ] Streaming packing
-- [ ] Streaming unpacking
+- [x] Streaming packing
+- [x] Streaming unpacking
 - [ ] Profile and optimise
 - [ ] Pure rust zstd?
   - [ ] Seekable files by adding a blockmap (map of file offsets to blocks)?
