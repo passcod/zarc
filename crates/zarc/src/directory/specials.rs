@@ -7,7 +7,7 @@ use super::strings::{CborString, Pathname};
 /// Special File metadata.
 ///
 /// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#30-special-file-types)
-#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+#[derive(Clone, Debug, Default, PartialEq, Encode, Decode)]
 #[cbor(array)]
 pub struct SpecialFile {
 	/// Kind of special file.

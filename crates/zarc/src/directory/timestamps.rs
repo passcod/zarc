@@ -7,7 +7,7 @@ use minicbor::{
 };
 
 /// Directory Filemap Entry Timestamps.
-#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+#[derive(Clone, Debug, Default, PartialEq, Encode, Decode)]
 #[cbor(map)]
 pub struct Timestamps {
 	/// Creation time (birth time).

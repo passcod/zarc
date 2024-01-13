@@ -3,7 +3,7 @@ use minicbor::{data::Type, Decode, Decoder, Encode, Encoder};
 use super::strings::CborString;
 
 /// POSIX owner information (user or group).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct PosixOwner {
 	/// Owner numeric ID.
 	pub id: Option<u64>,

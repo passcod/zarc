@@ -1,13 +1,10 @@
-use std::{fs::File, num::NonZeroU16, path::PathBuf};
+use std::{fs::File, path::PathBuf};
 
 use clap::{Parser, ValueHint};
 use rand::rngs::OsRng;
 use tracing::{debug, info};
 use walkdir::WalkDir;
-use zarc::{
-	encode::{Encoder, ZstdParameter, ZstdStrategy},
-	metadata::encode::build_filemap,
-};
+use zarc::encode::{Encoder, ZstdParameter, ZstdStrategy};
 
 #[derive(Debug, Clone, Parser)]
 pub struct PackArgs {
@@ -256,19 +253,12 @@ pub(crate) fn pack(args: PackArgs) -> std::io::Result<()> {
 			let filename = entry.path();
 			debug!("read {filename:?}");
 
-			let hash = if entry.file_type().is_file() {
-				let file = std::fs::read(&filename)?;
-				Some(zarc.add_data_frame(&file)?)
-			} else {
-				None
-			};
-
-			zarc.add_file_entry(build_filemap(
-				NonZeroU16::new(1).unwrap(),
-				filename,
-				args.follow_symlinks,
-				hash,
-			)?)?;
+			let mut file = zarc.build_file_with_metadata(filename, args.follow_symlinks)?;
+			if entry.file_type().is_file() {
+				let content = std::fs::read(&filename)?;
+				file.digest(zarc.add_data_frame(&content)?);
+			}
+			zarc.add_file_entry(file)?;
 		}
 	}
 

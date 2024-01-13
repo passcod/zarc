@@ -10,29 +10,23 @@ use std::{
 
 use tracing::{error, instrument, trace};
 
-use crate::{
-	directory::{
-		AttributeValue, CborString, File, Pathname, PosixOwner, SpecialFile, SpecialFileKind,
-		Timestamp, Timestamps,
-	},
-	integrity::Digest,
+use crate::directory::{
+	AttributeValue, CborString, File, Pathname, PosixOwner, SpecialFile, SpecialFileKind,
+	Timestamp, Timestamps,
 };
 
 /// Build a [`FilemapEntry`] from a filename.
 ///
-/// Give `frame_hash` to reference framed content.
+/// Doesn't set the digest: you need to do that manually afterwards.
+///
+/// Try using [`Decoder::build_file_with_metadata`] instead.
 ///
 /// This will perform syscalls; these are logged at trace level. To get more control you can use
 /// the individual functions [in this module][self].
 ///
 /// [`readdir(3)`]: https://man.archlinux.org/man/readdir.3
 #[instrument(level = "trace")]
-pub fn build_filemap(
-	edition: NonZeroU16,
-	path: &Path,
-	follow_links: bool,
-	digest: Option<Digest>,
-) -> Result<File> {
+pub fn build_filemap(edition: NonZeroU16, path: &Path, follow_links: bool) -> Result<File> {
 	let name = Pathname::from_normal_components(path);
 
 	trace!("reading immediate metadata");
@@ -58,7 +52,7 @@ pub fn build_filemap(
 
 	Ok(File {
 		edition,
-		digest,
+		digest: None,
 		name,
 		user: owner_user(&meta),
 		group: owner_group(&meta),
