@@ -41,6 +41,15 @@ pub(crate) fn unpack(args: UnpackArgs) -> miette::Result<()> {
 		}
 
 		if entry.is_dir() {
+			info!(path=?entry.name.to_path(), "unpack dir");
+			let mut dir = DirBuilder::new();
+			dir.recursive(true);
+			#[cfg(unix)]
+			if let Some(mode) = entry.mode {
+				use std::os::unix::fs::DirBuilderExt;
+				dir.mode(mode);
+			}
+			dir.create(entry.name.to_path()).into_diagnostic()?;
 		} else if entry.is_normal() {
 			if let Some(digest) = &entry.digest {
 				extract_file(entry, digest, &zarc)?;
@@ -56,7 +65,7 @@ fn extract_file(
 	digest: &zarc::integrity::Digest,
 	zarc: &Decoder<PathBuf>,
 ) -> miette::Result<()> {
-			info!(path=?entry.name.to_path(), digest=%bs64::encode(digest.as_slice()), "unpack file");
+	info!(path=?entry.name.to_path(), digest=%bs64::encode(digest.as_slice()), "unpack file");
 	let path = entry.name.to_path();
 
 	if let Some(dir) = path.parent() {
@@ -66,16 +75,16 @@ fn extract_file(
 
 	let mut file = File::create(path).into_diagnostic()?;
 	let Some(mut frame) = zarc.read_content_frame(&digest).into_diagnostic()? else {
-				warn!("frame not found");
+		warn!("frame not found");
 		return Ok(());
-			};
+	};
 
-			for bytes in &mut frame {
+	for bytes in &mut frame {
 		file.write_all(&bytes.into_diagnostic()?).unwrap();
-			}
-			if !frame.verify().unwrap_or(false) {
-				error!(path=?entry.name, "frame verification failed!");
-			}
+	}
+	if !frame.verify().unwrap_or(false) {
+		error!(path=?entry.name, "frame verification failed!");
+	}
 
 	Ok(())
 }
