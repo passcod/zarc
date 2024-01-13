@@ -1,6 +1,11 @@
-use std::{fs::File, io::Write, path::PathBuf};
+use std::{
+	fs::{DirBuilder, File, create_dir_all},
+	io::Write,
+	path::PathBuf,
+};
 
 use clap::{Parser, ValueHint};
+use miette::IntoDiagnostic;
 use regex::Regex;
 use tracing::{error, info, warn};
 use zarc::decode::Decoder;
@@ -23,32 +28,54 @@ pub struct UnpackArgs {
 
 pub(crate) fn unpack(args: UnpackArgs) -> miette::Result<()> {
 	info!("initialise decoder");
-	let zarc = Decoder::open(args.input)?;
+	let mut zarc = Decoder::open(args.input)?;
+	zarc.read_directory()?;
+	let zarc = zarc;
 
-	zarc.with_filemap(|entry| {
+	for entry in zarc.files() {
 		let name = entry.name.to_path().display().to_string();
 		if !args.filter.is_empty() {
 			if !args.filter.iter().any(|filter| filter.is_match(&name)) {
-				return;
+				continue;
 			}
 		}
 
-		if let Some(digest) = &entry.frame_hash {
+		if entry.is_dir() {
+		} else if entry.is_normal() {
+			if let Some(digest) = &entry.digest {
+				extract_file(entry, digest, &zarc)?;
+			}
+		}
+	}
+
+	Ok(())
+}
+
+fn extract_file(
+	entry: &zarc::directory::File,
+	digest: &zarc::integrity::Digest,
+	zarc: &Decoder<PathBuf>,
+) -> miette::Result<()> {
 			info!(path=?entry.name.to_path(), digest=%bs64::encode(digest.as_slice()), "unpack file");
-			let mut file = File::create(entry.name.to_path()).unwrap();
-			let Some(mut frame) = zarc.read_content_frame(&digest).unwrap() else {
+	let path = entry.name.to_path();
+
+	if let Some(dir) = path.parent() {
+		// create parent dir just in case its entry wasn't in the zarc
+		create_dir_all(dir).into_diagnostic()?;
+	}
+
+	let mut file = File::create(path).into_diagnostic()?;
+	let Some(mut frame) = zarc.read_content_frame(&digest).into_diagnostic()? else {
 				warn!("frame not found");
-				return;
+		return Ok(());
 			};
 
 			for bytes in &mut frame {
-				file.write_all(&bytes.unwrap()).unwrap();
+		file.write_all(&bytes.into_diagnostic()?).unwrap();
 			}
 			if !frame.verify().unwrap_or(false) {
 				error!(path=?entry.name, "frame verification failed!");
 			}
-		}
-	});
 
 	Ok(())
 }

@@ -6,7 +6,7 @@ use tracing::{debug, info};
 use walkdir::WalkDir;
 use zarc::{
 	encode::{Encoder, ZstdParameter, ZstdStrategy},
-	metadata::build_filemap,
+	metadata::encode::build_filemap,
 };
 
 #[derive(Debug, Clone, Parser)]

@@ -21,6 +21,36 @@ pub struct SpecialFile {
 	pub link_target: Option<LinkTarget>,
 }
 
+impl SpecialFile {
+	/// Returns `true` if this is a directory.
+	///
+	/// See also [`SpecialFileKind::is_dir`].
+	pub fn is_dir(&self) -> bool {
+		self.kind.map_or(false, SpecialFileKind::is_dir)
+	}
+
+	/// Returns `true` if this is a link.
+	///
+	/// See also [`SpecialFileKind::is_link`].
+	pub fn is_link(&self) -> bool {
+		self.kind.map_or(false, SpecialFileKind::is_link)
+	}
+
+	/// Returns `true` if this is a symlink.
+	///
+	/// See also [`SpecialFileKind::is_symlink`].
+	pub fn is_symlink(&self) -> bool {
+		self.kind.map_or(false, SpecialFileKind::is_symlink)
+	}
+
+	/// Returns `true` if this is a hardlink.
+	///
+	/// See also [`SpecialFileKind::is_hardlink`].
+	pub fn is_hardlink(&self) -> bool {
+		self.kind.map_or(false, SpecialFileKind::is_hardlink)
+	}
+}
+
 /// Special File kinds.
 ///
 /// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#30-special-file-types)

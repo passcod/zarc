@@ -15,7 +15,7 @@ impl<R: OnDemand> Decoder<R> {
 		&self,
 		digest: &Digest,
 	) -> Result<Option<FrameIterator<'_, R::Reader>>> {
-		let Some(entry) = self.frame_lookup.get(digest) else {
+		let Some(entry) = self.frames.get(digest) else {
 			return Ok(None);
 		};
 

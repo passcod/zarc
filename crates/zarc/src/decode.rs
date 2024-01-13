@@ -1,15 +1,13 @@
 //! Decoder types and functions.
 
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::{HashMap, BTreeMap}, num::NonZeroU16};
 
 use crate::{
-	directory::{File, LegacyDirectory},
+	directory::{File, Frame, Pathname, Edition},
 	integrity::Digest,
 	ondemand::OnDemand,
 	trailer::Trailer,
 };
-
-use self::directory::FrameLookupEntry;
 
 #[cfg_attr(feature = "expose-internals", visibility::make(pub))]
 #[doc(inline)]
@@ -26,27 +24,22 @@ mod zstd_iterator;
 
 /// Decoder context.
 ///
-/// Reader needs to be Seek, as Zarc reads the file backwards from the end to find the directory.
+/// Reader needs to be Seek, as Zarc reads the file backwards from the end to find the trailer and directory.
 #[derive(Debug)]
 pub struct Decoder<R> {
+	// given by user
 	reader: R,
 
-	/// Length of the file in bytes.
+	// obtained from trailer
 	file_length: u64,
-
-	/// Trailer, once known.
-	///
-	/// This contains the digest and signature of the directory, so it's needed to verify the
-	/// directory integrity.
 	trailer: Trailer,
 
-	/// This maps digests to frame offsets and uncompressed sizes, so reading from the directory is
-	/// not required to extract a frame given its digest.
-	frame_lookup: HashMap<Digest, FrameLookupEntry>,
-
-	/// Zarc Directory, if keeping it in memory. This is only done if the directory decompresses in
-	/// one step, which is the case for small to medium archives (about <128KiB of directory).
-	directory: Option<Rc<LegacyDirectory>>,
+	// obtained from directory
+	editions: BTreeMap<NonZeroU16, Edition>,
+	files: Vec<File>,
+	frames: HashMap<Digest, Frame>,
+	files_by_name: BTreeMap<Pathname, Vec<usize>>,
+	files_by_digest: HashMap<Digest, Vec<usize>>,
 }
 
 impl<R: OnDemand> Decoder<R> {
@@ -60,16 +53,47 @@ impl<R: OnDemand> Decoder<R> {
 		&self.trailer
 	}
 
-	/// Iterate through the filemap.
-	///
-	/// TODO: Really this should be an iterator.
-	pub fn with_filemap(&self, fun: impl Fn(&File)) {
-		if let Some(directory) = self.directory.as_ref().map(|dh| Rc::clone(dh)) {
-			for entry in directory.filemap.iter() {
-				fun(entry);
-			}
-		} else {
-			todo!("streaming filemap");
-		}
+	/// Iterate through the editions.
+	pub fn editions(&self) -> impl Iterator<Item = &Edition> {
+		self.editions.values()
+	}
+
+	/// Get edition metadata by number.
+	pub fn edition(&self, number: impl TryInto<NonZeroU16>) -> Option<&Edition> {
+		number.try_into().ok().and_then(|number| self.editions.get(&number))
+	}
+
+	/// Get the latest (current) edition.
+	pub fn latest_edition(&self) -> Option<&Edition> {
+		self.editions.values().last()
+	}
+
+	/// Iterate through the files.
+	pub fn files(&self) -> impl Iterator<Item = &File> {
+		self.files.iter()
+	}
+
+	/// Get file entries that have a particular (path)name.
+	pub fn files_by_name(&self, name: impl Into<Pathname>) -> Option<Vec<&File>> {
+		self.files_by_name.get(&name.into()).map(Vec::as_slice).map(|v| {
+			v.iter().filter_map(|i| self.files.get(*i)).collect()
+		})
+	}
+
+	/// Get files that reference a frame from its digest.
+	pub fn files_by_digest(&self, digest: &Digest) -> Option<Vec<&File>> {
+		self.files_by_digest.get(digest).map(Vec::as_slice).map(|v| {
+			v.iter().filter_map(|i| self.files.get(*i)).collect()
+		})
+	}
+
+	/// Iterate through the frames.
+	pub fn frames(&self) -> impl Iterator<Item = &Frame> {
+		self.frames.values()
+	}
+
+	/// Get frame metadata by digest.
+	pub fn frame(&self, digest: &Digest) -> Option<&Frame> {
+		self.frames.get(digest)
 	}
 }

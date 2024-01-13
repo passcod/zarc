@@ -149,8 +149,11 @@ impl<R: OnDemand> Decoder<R> {
 			reader,
 			file_length,
 			trailer,
-			frame_lookup: Default::default(),
-			directory: None,
+			editions: Default::default(),
+			files: Default::default(),
+			frames: Default::default(),
+			files_by_name: Default::default(),
+			files_by_digest: Default::default(),
 		})
 	}
 }

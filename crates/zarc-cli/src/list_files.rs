@@ -33,18 +33,20 @@ pub struct ListFilesArgs {
 
 pub(crate) fn list_files(args: ListFilesArgs) -> miette::Result<()> {
 	info!("initialise decoder");
-	let zarc = Decoder::open(args.input)?;
+	let mut zarc = Decoder::open(args.input)?;
+	zarc.read_directory()?;
+	let zarc = zarc;
 
 	info!("list files");
-	zarc.with_filemap(|entry| {
+	for entry in zarc.files() {
 		if args.only_files && entry.special.is_some() {
-			return;
+			continue;
 		}
 
 		let name = entry.name.to_path().display().to_string();
 		if !args.filter.is_empty() {
 			if !args.filter.iter().any(|filter| filter.is_match(&name)) {
-				return;
+				continue;
 			}
 		}
 
@@ -57,7 +59,7 @@ pub(crate) fn list_files(args: ListFilesArgs) -> miette::Result<()> {
 		}
 
 		println!("");
-	});
+	}
 
 	Ok(())
 }
