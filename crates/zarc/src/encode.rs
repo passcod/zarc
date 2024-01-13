@@ -242,7 +242,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 			Frame {
 				edition: self.edition,
 				offset: offset.try_into().map_err(|err| Error::other(err))?,
-				frame_hash: digest.clone(),
+				digest: digest.clone(),
 				signature,
 				length: bytes as _,
 				uncompressed: uncompressed_size as _,
@@ -256,7 +256,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 	// TODO: more ergonomic APIs, e.g. from a File
 	// TODO: builder API for user metadata?
 	pub fn add_file_entry(&mut self, entry: File) -> Result<()> {
-		if let Some(hash) = &entry.frame_hash {
+		if let Some(hash) = &entry.digest {
 			if !self.frames.contains_key(hash) {
 				return Err(Error::other(
 					"cannot add file entry referencing unknown data frame",
@@ -265,7 +265,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		}
 
 		let name = entry.name.clone();
-		let digest = entry.frame_hash.clone();
+		let digest = entry.digest.clone();
 
 		self.files.push(Some(entry));
 		let index = self.files.len() - 1;
@@ -335,7 +335,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 				};
 
 				// we always want to insert a frame element before the linked file element
-				if let Some(digest) = &file.frame_hash {
+				if let Some(digest) = &file.digest {
 					// if we've already written it, this will be None
 					if let Some(frame) = self.frames.remove(digest) {
 						Self::write_element(&mut directory, &mut hasher, &Element::Frame(frame))?;

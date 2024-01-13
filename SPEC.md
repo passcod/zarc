@@ -196,7 +196,7 @@ Pathnames do not encode whether a path is absolute or relative: all paths inside
 It is possible to have several identical pathname in a Zarc Directory.
 Implementations SHOULD provide an option to use the first or last or other selection criteria, but MUST default to preferring the last of a set of identical pathnames.
 
-#### Key `2`: Hash of Frame
+#### Key `2`: Frame Digest
 
 _Byte string._ **Conditional.**
 
@@ -363,7 +363,7 @@ The offset in bytes from the start of the Zarc file to the first byte of the Zst
 
 There MUST NOT be duplicate Frame Offsets in the Frame list.
 
-#### Key `2`: Frame Content Hash
+#### Key `2`: Frame Content Digest
 
 _Byte string._ **Mandatory.**
 

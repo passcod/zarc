@@ -26,7 +26,7 @@ pub struct File {
 
 	/// Hash of a frame of content.
 	#[n(2)]
-	pub frame_hash: Option<Digest>,
+	pub digest: Option<Digest>,
 
 	/// POSIX mode.
 	#[n(3)]
@@ -59,4 +59,39 @@ pub struct File {
 	/// Extended attributes.
 	#[n(12)]
 	pub extended_attributes: Option<HashMap<String, AttributeValue>>,
+}
+
+impl File {
+	/// Returns `true` if this is _not_ a special file _and_ it has a frame.
+	pub fn is_normal(&self) -> bool {
+		self.digest.is_some() && self.special.is_none()
+	}
+
+	/// Returns `true` if this is a directory.
+	///
+	/// See also [`SpecialFile::is_dir`].
+	pub fn is_dir(&self) -> bool {
+		self.special.as_ref().map_or(false, SpecialFile::is_dir)
+	}
+
+	/// Returns `true` if this is a link.
+	///
+	/// See also [`SpecialFile::is_link`].
+	pub fn is_link(&self) -> bool {
+		self.special.as_ref().map_or(false, SpecialFile::is_link)
+	}
+
+	/// Returns `true` if this is a symlink.
+	///
+	/// See also [`SpecialFile::is_symlink`].
+	pub fn is_symlink(&self) -> bool {
+		self.special.as_ref().map_or(false, SpecialFile::is_symlink)
+	}
+
+	/// Returns `true` if this is a hardlink.
+	///
+	/// See also [`SpecialFile::is_hardlink`].
+	pub fn is_hardlink(&self) -> bool {
+		self.special.as_ref().map_or(false, SpecialFile::is_hardlink)
+	}
 }

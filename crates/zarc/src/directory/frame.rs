@@ -20,7 +20,7 @@ pub struct Frame {
 
 	/// Hash of the frame.
 	#[n(2)]
-	pub frame_hash: Digest,
+	pub digest: Digest,
 
 	/// Signature against hash.
 	#[n(3)]
