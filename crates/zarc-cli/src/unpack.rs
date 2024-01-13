@@ -8,7 +8,10 @@ use clap::{Parser, ValueHint};
 use miette::IntoDiagnostic;
 use regex::Regex;
 use tracing::{error, info, warn};
-use zarc::decode::Decoder;
+use zarc::{
+	decode::Decoder,
+	metadata::decode::{set_ownership, set_permissions, set_timestamps},
+};
 
 #[derive(Debug, Clone, Parser)]
 pub struct UnpackArgs {
@@ -32,6 +35,10 @@ pub(crate) fn unpack(args: UnpackArgs) -> miette::Result<()> {
 	zarc.read_directory()?;
 	let zarc = zarc;
 
+	// zarc.frames().for_each(|frame| {
+	// 	info!(offset=%frame.offset, digest=%bs64::encode(frame.digest.as_slice()), "frame");
+	// });
+
 	for entry in zarc.files() {
 		let name = entry.name.to_path().display().to_string();
 		if !args.filter.is_empty() && !args.filter.iter().any(|filter| filter.is_match(&name)) {
@@ -39,7 +46,8 @@ pub(crate) fn unpack(args: UnpackArgs) -> miette::Result<()> {
 		}
 
 		if entry.is_dir() {
-			info!(path=?entry.name.to_path(), "unpack dir");
+			let path = entry.name.to_path();
+			info!(?path, "unpack dir");
 			let mut dir = DirBuilder::new();
 			dir.recursive(true);
 			#[cfg(unix)]
@@ -47,7 +55,10 @@ pub(crate) fn unpack(args: UnpackArgs) -> miette::Result<()> {
 				use std::os::unix::fs::DirBuilderExt;
 				dir.mode(mode);
 			}
-			dir.create(entry.name.to_path()).into_diagnostic()?;
+			dir.create(&path).into_diagnostic()?;
+
+			let file = File::open(path).into_diagnostic()?;
+			set_metadata(entry, &file)?;
 		} else if entry.is_normal() {
 			if let Some(digest) = &entry.digest {
 				extract_file(entry, digest, &zarc)?;
@@ -71,11 +82,12 @@ fn extract_file(
 		create_dir_all(dir).into_diagnostic()?;
 	}
 
-	let mut file = File::create(path).into_diagnostic()?;
 	let Some(mut frame) = zarc.read_content_frame(digest).into_diagnostic()? else {
 		warn!("frame not found");
 		return Ok(());
 	};
+
+	let mut file = File::create(path).into_diagnostic()?;
 
 	for bytes in &mut frame {
 		file.write_all(&bytes.into_diagnostic()?)
@@ -83,6 +95,21 @@ fn extract_file(
 	}
 	if !frame.verify().unwrap_or(false) {
 		error!(path=?entry.name, "frame verification failed!");
+	}
+
+	set_metadata(entry, &file)?;
+	Ok(())
+}
+
+fn set_metadata(entry: &zarc::directory::File, file: &File) -> miette::Result<()> {
+	set_ownership(file, entry).into_diagnostic()?;
+
+	let mut perms = file.metadata().into_diagnostic()?.permissions();
+	set_permissions(&mut perms, entry).into_diagnostic()?;
+	file.set_permissions(perms).into_diagnostic()?;
+
+	if let Some(ts) = &entry.timestamps {
+		set_timestamps(file, ts).into_diagnostic()?;
 	}
 
 	Ok(())

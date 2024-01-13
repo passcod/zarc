@@ -1,5 +1,4 @@
 use std::{
-	ffi::OsStr,
 	io::{Error, Result, Write},
 	path::Path,
 };
@@ -8,8 +7,8 @@ use tracing::{instrument, trace};
 
 use crate::{
 	directory::{
-		AttributeValue, CborString, File, Pathname, PosixOwner, SpecialFile, SpecialFileKind,
-		Timestamp, Timestamps,
+		AttributeValue, File, Pathname, PosixOwner, SpecialFile, SpecialFileKind, Timestamp,
+		Timestamps,
 	},
 	integrity::Digest,
 	metadata::encode::build_filemap,

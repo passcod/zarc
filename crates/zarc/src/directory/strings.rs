@@ -159,6 +159,16 @@ pub enum AttributeValue {
 	String(CborString),
 }
 
+impl AttributeValue {
+	/// Get the value as a bool if it is one.
+	pub fn as_bool(&self) -> Option<bool> {
+		match self {
+			Self::Boolean(b) => Some(*b),
+			_ => None,
+		}
+	}
+}
+
 impl From<bool> for AttributeValue {
 	fn from(b: bool) -> Self {
 		Self::Boolean(b)

@@ -31,7 +31,7 @@ zstd = "0.13.0"
 zstd-safe = { version = "7.0.0", features = ["std"] }
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.27.1", features = ["fs"], optional = true }
+nix = { version = "0.27.1", features = ["user"] }
 
 [target.'cfg(target_os="linux")'.dependencies]
 e2p-fileflags = { version = "0.1.0", optional = true }
@@ -43,7 +43,7 @@ windows = { version = "0.52.0", features = ["Win32_Storage_FileSystem"], optiona
 default = ["metadata"]
 
 ## Enable the metadata gathering module, which pulls in platform-specific libraries
-metadata = ["dep:e2p-fileflags", "dep:nix", "dep:windows", "dep:xattr"]
+metadata = ["dep:e2p-fileflags", "nix/fs", "dep:windows", "dep:xattr"]
 
 ## Expose internal encoding/decoding functions
 expose-internals = []

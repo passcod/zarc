@@ -485,6 +485,7 @@ Summary
 - [x] `zarc unpack`
   - [ ] `--key` to check public key matches
   - [ ] `--attest` and `--attest-file` to check external signature
+  - [ ] Unpack symlinks
   - [ ] Unpack linux attributes
   - [ ] Unpack linux xattrs
   - [ ] Unpack linux ACLS
@@ -496,6 +497,8 @@ Summary
   - [ ] Override user/group
   - [ ] User/group mappings
 - [x] `zarc list-files`
+  - [ ] `--stat` — with mode, ownership, size, creation.or(modified) date
+  - [ ] `--json` — all the info
 - [x] Streaming packing
 - [x] Streaming unpacking
 - [ ] Profile and optimise

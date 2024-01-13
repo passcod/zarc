@@ -54,8 +54,8 @@ pub fn build_filemap(edition: NonZeroU16, path: &Path, follow_links: bool) -> Re
 		edition,
 		digest: None,
 		name,
-		user: owner_user(&meta),
-		group: owner_group(&meta),
+		user: owner_user(&meta)?,
+		group: owner_group(&meta)?,
 		mode: posix_mode(&meta),
 		special: if file_type.is_dir() {
 			Some(SpecialFile {
@@ -89,21 +89,18 @@ pub fn timestamps(meta: &Metadata) -> Timestamps {
 
 /// Get the owning user of the file.
 ///
-/// On non-unix, always returns `None`.
+/// On non-unix, always returns `Ok(None)`.
 #[instrument(level = "trace")]
-pub fn owner_user(meta: &Metadata) -> Option<PosixOwner> {
+pub fn owner_user(meta: &Metadata) -> Result<Option<PosixOwner>> {
 	#[cfg(unix)]
 	{
 		use std::os::unix::fs::MetadataExt;
-		Some(PosixOwner {
-			id: Some(meta.uid() as _),
-			name: None,
-		})
+		PosixOwner::from_uid(meta.uid())
 	}
 
 	#[cfg(not(unix))]
 	{
-		None
+		Ok(None)
 	}
 }
 
@@ -111,19 +108,16 @@ pub fn owner_user(meta: &Metadata) -> Option<PosixOwner> {
 ///
 /// On non-unix, always returns `None`.
 #[instrument(level = "trace")]
-pub fn owner_group(meta: &Metadata) -> Option<PosixOwner> {
+pub fn owner_group(meta: &Metadata) -> Result<Option<PosixOwner>> {
 	#[cfg(unix)]
 	{
 		use std::os::unix::fs::MetadataExt;
-		Some(PosixOwner {
-			id: Some(meta.gid() as _),
-			name: None,
-		})
+		PosixOwner::from_gid(meta.gid())
 	}
 
 	#[cfg(not(unix))]
 	{
-		None
+		Ok(None)
 	}
 }
 

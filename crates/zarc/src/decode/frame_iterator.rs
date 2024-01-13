@@ -19,11 +19,6 @@ impl<R: OnDemand> Decoder<R> {
 			return Ok(None);
 		};
 
-		if entry.offset == 12 {
-			// this is the unintended magic frame, which is not a content frame
-			return Ok(None);
-		}
-
 		Ok(Some(FrameIterator::new(
 			self.read_zstandard_frame(entry.offset)?,
 			digest.clone(),
