@@ -1,5 +1,5 @@
 use std::{
-	fs::{DirBuilder, File, create_dir_all},
+	fs::{create_dir_all, DirBuilder, File},
 	io::Write,
 	path::PathBuf,
 };

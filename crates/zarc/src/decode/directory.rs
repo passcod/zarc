@@ -5,7 +5,11 @@ use deku::DekuContainerRead;
 use ozarc::framing::{ZstandardBlockHeader, ZstandardFrameHeader};
 use tracing::{debug, instrument, trace};
 
-use crate::{directory::{ElementFrame, Element}, integrity::Digest, ondemand::OnDemand};
+use crate::{
+	directory::{Element, ElementFrame},
+	integrity::Digest,
+	ondemand::OnDemand,
+};
 
 use super::{
 	error::{ErrorKind, Result, SimpleError},
@@ -81,9 +85,15 @@ impl<R: OnDemand> Decoder<R> {
 						let digest = file.digest.clone();
 						files.push(file);
 						let index = files.len() - 1;
-						files_by_name.entry(name).or_insert_with(Vec::new).push(index);
+						files_by_name
+							.entry(name)
+							.or_insert_with(Vec::new)
+							.push(index);
 						if let Some(digest) = digest {
-							files_by_digest.entry(digest).or_insert_with(Vec::new).push(index);
+							files_by_digest
+								.entry(digest)
+								.or_insert_with(Vec::new)
+								.push(index);
 						}
 					}
 				}

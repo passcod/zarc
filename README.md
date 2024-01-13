@@ -481,7 +481,7 @@ Summary
   - [ ] Pack windows alternate data stream extended attributes
   - [ ] Override user/group
   - [ ] User/group mappings
-- [x] `zarc debug`
+- [ ] `zarc debug`
 - [x] `zarc unpack`
   - [ ] `--key` to check public key matches
   - [ ] `--attest` and `--attest-file` to check external signature

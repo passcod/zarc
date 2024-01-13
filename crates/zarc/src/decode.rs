@@ -1,9 +1,12 @@
 //! Decoder types and functions.
 
-use std::{collections::{HashMap, BTreeMap}, num::NonZeroU16};
+use std::{
+	collections::{BTreeMap, HashMap},
+	num::NonZeroU16,
+};
 
 use crate::{
-	directory::{File, Frame, Pathname, Edition},
+	directory::{Edition, File, Frame, Pathname},
 	integrity::Digest,
 	ondemand::OnDemand,
 	trailer::Trailer,
@@ -60,7 +63,10 @@ impl<R: OnDemand> Decoder<R> {
 
 	/// Get edition metadata by number.
 	pub fn edition(&self, number: impl TryInto<NonZeroU16>) -> Option<&Edition> {
-		number.try_into().ok().and_then(|number| self.editions.get(&number))
+		number
+			.try_into()
+			.ok()
+			.and_then(|number| self.editions.get(&number))
 	}
 
 	/// Get the latest (current) edition.
@@ -75,16 +81,18 @@ impl<R: OnDemand> Decoder<R> {
 
 	/// Get file entries that have a particular (path)name.
 	pub fn files_by_name(&self, name: impl Into<Pathname>) -> Option<Vec<&File>> {
-		self.files_by_name.get(&name.into()).map(Vec::as_slice).map(|v| {
-			v.iter().filter_map(|i| self.files.get(*i)).collect()
-		})
+		self.files_by_name
+			.get(&name.into())
+			.map(Vec::as_slice)
+			.map(|v| v.iter().filter_map(|i| self.files.get(*i)).collect())
 	}
 
 	/// Get files that reference a frame from its digest.
 	pub fn files_by_digest(&self, digest: &Digest) -> Option<Vec<&File>> {
-		self.files_by_digest.get(digest).map(Vec::as_slice).map(|v| {
-			v.iter().filter_map(|i| self.files.get(*i)).collect()
-		})
+		self.files_by_digest
+			.get(digest)
+			.map(Vec::as_slice)
+			.map(|v| v.iter().filter_map(|i| self.files.get(*i)).collect())
 	}
 
 	/// Iterate through the frames.

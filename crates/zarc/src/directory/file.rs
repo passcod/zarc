@@ -92,6 +92,8 @@ impl File {
 	///
 	/// See also [`SpecialFile::is_hardlink`].
 	pub fn is_hardlink(&self) -> bool {
-		self.special.as_ref().map_or(false, SpecialFile::is_hardlink)
+		self.special
+			.as_ref()
+			.map_or(false, SpecialFile::is_hardlink)
 	}
 }
