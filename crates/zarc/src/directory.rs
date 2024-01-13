@@ -1,9 +1,5 @@
 //! Common types defining the binary format structures.
 
-#[doc(hidden)]
-pub use self::legacy::*;
-mod legacy;
-
 #[doc(inline)]
 pub use self::edition::*;
 #[doc(inline)]
