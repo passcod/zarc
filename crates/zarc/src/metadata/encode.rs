@@ -8,7 +8,7 @@ use std::{
 	path::Path,
 };
 
-use tracing::{error, instrument, trace};
+use tracing::{error, instrument, trace, warn};
 
 use crate::directory::{
 	AttributeValue, CborString, File, Pathname, PosixOwner, SpecialFile, SpecialFileKind,
@@ -21,8 +21,8 @@ use crate::directory::{
 ///
 /// Try using [`Decoder::build_file_with_metadata`] instead.
 ///
-/// This will perform syscalls; these are logged at trace level. To get more control you can use
-/// the individual functions [in this module][self].
+/// This will perform syscalls; these are logged at trace level. Some errors are ignored. To get
+/// more control you can use the individual functions [in this module](self).
 ///
 /// [`readdir(3)`]: https://man.archlinux.org/man/readdir.3
 #[instrument(level = "trace")]
@@ -54,8 +54,12 @@ pub fn build_filemap(edition: NonZeroU16, path: &Path, follow_links: bool) -> Re
 		edition,
 		digest: None,
 		name,
-		user: owner_user(&meta)?,
-		group: owner_group(&meta)?,
+		user: owner_user(&meta)
+			.map_err(|err| warn!(%err, "can't resolve user"))
+			.unwrap_or_default(),
+		group: owner_group(&meta)
+			.map_err(|err| warn!(%err, "can't resolve group"))
+			.unwrap_or_default(),
 		mode: posix_mode(&meta),
 		special: if file_type.is_dir() {
 			Some(SpecialFile {
@@ -71,8 +75,12 @@ pub fn build_filemap(edition: NonZeroU16, path: &Path, follow_links: bool) -> Re
 			None
 		},
 		timestamps: Some(timestamps(&meta)),
-		attributes: file_attributes(path, &meta)?,
-		extended_attributes: file_extended_attributes(path)?,
+		attributes: file_attributes(path, &meta)
+			.map_err(|err| warn!(%err, "can't resolve attributes"))
+			.unwrap_or_default(),
+		extended_attributes: file_extended_attributes(path)
+			.map_err(|err| warn!(%err, "can't resolve extended attributes"))
+			.unwrap_or_default(),
 		user_metadata: None,
 	})
 }

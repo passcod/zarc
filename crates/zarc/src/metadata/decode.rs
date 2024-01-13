@@ -48,8 +48,8 @@ impl From<&Timestamps> for FileTimes {
 pub fn set_permissions(permissions: &mut Permissions, meta: &File) -> std::io::Result<()> {
 	let readonly = meta.attributes.as_ref().and_then(|attrs| {
 		attrs
-			.get("readonly")
-			.or_else(|| attrs.get("win32.readonly"))
+			.get("read-only")
+			.or_else(|| attrs.get("win32.read-only"))
 			.and_then(|v| v.as_bool())
 	});
 
