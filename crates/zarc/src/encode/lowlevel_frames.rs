@@ -58,6 +58,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 				},
 				window_descriptor: None,
 				did: Vec::new(),
+				#[allow(clippy::unwrap_used)] // UNWRAP: realistically we'll never have more than u64 bytes of content
 				frame_content_size: u64::try_from(data.len()).unwrap().to_le_bytes().to_vec(),
 			},
 			blocks: data
@@ -66,7 +67,8 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 					header: ZstandardBlockHeader::new(
 						ZstandardBlockType::Raw,
 						false,
-						u32::try_from(data.len()).unwrap(), // UNWRAP: chunks() limits to u16
+						#[allow(clippy::unwrap_used)] // UNWRAP: chunks() limits to u16
+						u32::try_from(data.len()).unwrap(),
 					),
 					data: data.into(),
 				})

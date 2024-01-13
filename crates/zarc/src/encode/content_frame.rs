@@ -24,11 +24,11 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 	#[instrument(level = "trace", skip(self, content))]
 	pub fn add_data_frame(&mut self, content: &[u8]) -> Result<Digest> {
 		// collect pre-compression values
-		let offset = self.offset.try_into().map_err(|err| Error::other(err))?;
+		let offset = self.offset.try_into().map_err(Error::other)?;
 		let uncompressed_size = content.len();
 
 		// compute content hash
-		let digest = blake3::hash(&content);
+		let digest = blake3::hash(content);
 		let digest = Digest(digest.as_bytes().to_vec());
 		trace!(%uncompressed_size, digest=%format!("{digest:02x?}"), "computed digest");
 
@@ -41,7 +41,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		let signature = Signature(
 			self.key
 				.try_sign(digest.as_slice())
-				.map_err(|err| Error::other(err))?
+				.map_err(Error::other)?
 				.to_vec(),
 		);
 		trace!(signature=%format!("{signature:02x?}"), "computed signature");

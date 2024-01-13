@@ -129,7 +129,7 @@ impl<'b, C> Decode<'b, C> for CborString {
 				String::new(),
 				|mut string, s| {
 					s.map(|s| {
-						string.extend(s.chars());
+						string.push_str(s);
 						string
 					})
 				},

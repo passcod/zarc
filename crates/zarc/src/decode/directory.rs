@@ -75,25 +75,19 @@ impl<R: OnDemand> Decoder<R> {
 				trace!(?element, "read element");
 				match element.element()? {
 					Element::Edition(edition) => {
-						editions.insert(edition.number, edition);
+						editions.insert(edition.number, *edition);
 					}
 					Element::Frame(frame) => {
-						frames.insert(frame.digest.clone(), frame);
+						frames.insert(frame.digest.clone(), *frame);
 					}
 					Element::File(file) => {
 						let name = file.name.clone();
 						let digest = file.digest.clone();
-						files.push(file);
+						files.push(*file);
 						let index = files.len() - 1;
-						files_by_name
-							.entry(name)
-							.or_insert_with(Vec::new)
-							.push(index);
+						files_by_name.entry(name).or_default().push(index);
 						if let Some(digest) = digest {
-							files_by_digest
-								.entry(digest)
-								.or_insert_with(Vec::new)
-								.push(index);
+							files_by_digest.entry(digest).or_default().push(index);
 						}
 					}
 				}

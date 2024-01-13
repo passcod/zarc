@@ -22,7 +22,7 @@ pub fn from_args(args: &Args) -> Result<()> {
 	let verbosity = args.verbose.unwrap_or(0);
 	if verbosity > 0 {
 		let log_file = if let Some(file) = &args.log_file {
-			let is_dir = metadata(&file).map_or(false, |info| info.is_dir());
+			let is_dir = metadata(file).map_or(false, |info| info.is_dir());
 			let path = if is_dir {
 				let filename = format!(
 					"zarc.{}.log",

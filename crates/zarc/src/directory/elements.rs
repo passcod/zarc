@@ -64,11 +64,11 @@ pub enum ElementKind {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Element {
 	/// [Edition]
-	Edition(Edition),
+	Edition(Box<Edition>),
 	/// [File]
-	File(File),
+	File(Box<File>),
 	/// [Frame]
-	Frame(Frame),
+	Frame(Box<Frame>),
 }
 
 impl Element {
@@ -83,7 +83,7 @@ impl Element {
 
 	/// Write the [Element] into a CBOR payload.
 	pub fn to_vec(&self) -> Vec<u8> {
-		// UNWRAP: minicbor encoding is infallible
+		#[allow(clippy::unwrap_used)] // UNWRAP: minicbor encoding is infallible
 		match self {
 			Element::Edition(edition) => minicbor::to_vec(edition),
 			Element::File(file) => minicbor::to_vec(file),

@@ -72,7 +72,7 @@ impl SimpleError {
 	pub fn new(kind: ErrorKind) -> Self {
 		Self {
 			kind,
-			message: kind.default_message().into(),
+			message: kind.default_message(),
 		}
 	}
 
@@ -93,7 +93,7 @@ impl SourceError {
 	pub fn new(kind: ErrorKind, snippet: &[u8], at_byte: usize) -> Self {
 		Self {
 			kind,
-			message: kind.default_message().into(),
+			message: kind.default_message(),
 			snippet: format!("{snippet:02x?}"),
 			at: SourceSpan::from((
 				(at_byte * 2) + 1, // to account for [

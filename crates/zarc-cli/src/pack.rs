@@ -157,7 +157,7 @@ impl clap::builder::TypedValueParser for ParseZstdParam {
 			})),
 			flag if ZSTD_PARAM_LIST_BOOL.contains(&flag) => {
 				let val: bool =
-					BoolishValueParser::new().parse_ref(cmd, arg, &std::ffi::OsStr::new(right))?;
+					BoolishValueParser::new().parse_ref(cmd, arg, std::ffi::OsStr::new(right))?;
 				Ok(match flag {
 					"EnableLongDistanceMatching" => ZstdParameter::EnableLongDistanceMatching(val),
 					"ContentSizeFlag" => ZstdParameter::ContentSizeFlag(val),
@@ -169,8 +169,11 @@ impl clap::builder::TypedValueParser for ParseZstdParam {
 			tune if ZSTD_PARAM_LIST_U32.contains(&tune) => {
 				let val: u64 = RangedU64ValueParser::new()
 					.range(0..(u32::MAX as _))
-					.parse_ref(cmd, arg, &std::ffi::OsStr::new(right))?;
-				let val = u32::try_from(val).unwrap(); // UNWRAP: checked by range
+					.parse_ref(cmd, arg, std::ffi::OsStr::new(right))?;
+
+				#[allow(clippy::unwrap_used)] // UNWRAP: checked by range
+				let val = u32::try_from(val).unwrap();
+
 				Ok(match tune {
 					"WindowLog" => ZstdParameter::WindowLog(val),
 					"HashLog" => ZstdParameter::HashLog(val),
@@ -255,7 +258,7 @@ pub(crate) fn pack(args: PackArgs) -> std::io::Result<()> {
 
 			let mut file = zarc.build_file_with_metadata(filename, args.follow_symlinks)?;
 			if entry.file_type().is_file() {
-				let content = std::fs::read(&filename)?;
+				let content = std::fs::read(filename)?;
 				file.digest(zarc.add_data_frame(&content)?);
 			}
 			zarc.add_file_entry(file)?;

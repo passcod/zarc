@@ -17,8 +17,6 @@ use crate::{
 
 use super::Encoder;
 
-// TODO: more ergonomic APIs, e.g. from a File
-
 impl<'writer, W: Write> Encoder<'writer, W> {
 	/// Add a file entry.
 	#[instrument(level = "trace", skip(self))]
@@ -40,15 +38,9 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		let index = self.files.len() - 1;
 		trace!(index, "added file entry");
 
-		self.files_by_name
-			.entry(name)
-			.or_insert_with(Vec::new)
-			.push(index);
+		self.files_by_name.entry(name).or_default().push(index);
 		if let Some(digest) = digest {
-			self.files_by_digest
-				.entry(digest)
-				.or_insert_with(Vec::new)
-				.push(index);
+			self.files_by_digest.entry(digest).or_default().push(index);
 		}
 
 		Ok(())

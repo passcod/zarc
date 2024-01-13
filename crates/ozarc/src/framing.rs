@@ -33,10 +33,10 @@ use deku::prelude::*;
 /// Magic number for a [Skippable Frame](SkippableFrame).
 ///
 /// This is only bytes 1-3 of the magic, and the first byte is any value from 0x50 to 0x5F.
-pub const SKIPPABLE_FRAME_MAGIC: &'static [u8] = b"\x2A\x4D\x18";
+pub const SKIPPABLE_FRAME_MAGIC: &[u8] = b"\x2A\x4D\x18";
 
 /// Magic number for a [Zstandard Frame](ZstandardFrame).
-pub const ZSTANDARD_FRAME_MAGIC: &'static [u8] = b"\x28\xB5\x2F\xFD";
+pub const ZSTANDARD_FRAME_MAGIC: &[u8] = b"\x28\xB5\x2F\xFD";
 
 /// The overhead of a [Skippable Frame](SkippableFrame) in bytes.
 ///
@@ -322,7 +322,7 @@ pub struct ZstandardBlockHeader {
 impl ZstandardBlockHeader {
 	/// Create a new Zstandard block header.
 	pub fn new(block_type: ZstandardBlockType, last: bool, size: u32) -> Self {
-		assert!(size <= 2_u32.pow(24) - 1);
+		assert!(size < 2_u32.pow(24));
 
 		let [a, b, c, d] = u32::to_be_bytes(size << 3);
 		let size_high = u16::from_be_bytes([b, c]);

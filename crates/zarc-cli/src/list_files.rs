@@ -44,10 +44,8 @@ pub(crate) fn list_files(args: ListFilesArgs) -> miette::Result<()> {
 		}
 
 		let name = entry.name.to_path().display().to_string();
-		if !args.filter.is_empty() {
-			if !args.filter.iter().any(|filter| filter.is_match(&name)) {
-				continue;
-			}
+		if !args.filter.is_empty() && !args.filter.iter().any(|filter| filter.is_match(&name)) {
+			continue;
 		}
 
 		print!("{name}");
@@ -58,7 +56,7 @@ pub(crate) fn list_files(args: ListFilesArgs) -> miette::Result<()> {
 			_ => (),
 		}
 
-		println!("");
+		println!();
 	}
 
 	Ok(())

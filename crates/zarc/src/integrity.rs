@@ -113,7 +113,7 @@ impl DigestType {
 	pub fn verify_data(self, expected: &Digest, data: &[u8]) -> bool {
 		match self {
 			Self::Blake3 => {
-				let actual = blake3::hash(&data);
+				let actual = blake3::hash(data);
 				let Ok(expected_bytes) = expected.as_slice().try_into() else {
 					return false;
 				};

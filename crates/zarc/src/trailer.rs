@@ -78,12 +78,16 @@ impl Trailer {
 		bytes.extend(self.public_key.iter());
 		bytes.extend(self.digest.iter());
 		bytes.extend(self.signature.iter());
+
 		// UNWRAP: there's no way to construct an epilogue that doesn't serialise
+		#[allow(clippy::unwrap_used)]
 		bytes.extend(Epilogue::from(self).to_bytes().unwrap());
+
 		bytes
 	}
 
 	/// The full length of the trailer in bytes.
+	#[allow(clippy::len_without_is_empty)] // CLIPPY: this is not a collection
 	pub fn len(&self) -> usize {
 		self.public_key.len() + self.digest.len() + self.signature.len() + EPILOGUE_LENGTH
 	}
@@ -108,8 +112,11 @@ impl Trailer {
 		bytes.extend(self.public_key.iter());
 		bytes.extend(self.digest.iter());
 		bytes.extend(self.signature.iter());
+
 		// UNWRAP: there's no way to construct an epilogue that doesn't serialise
+		#[allow(clippy::unwrap_used)]
 		bytes.extend(self.epilogue_without_check().to_bytes().unwrap());
+
 		bytes.iter().fold(0, |check, x| check ^ *x)
 	}
 

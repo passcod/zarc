@@ -101,7 +101,7 @@ impl<'zstd, R: Read + Seek> Iterator for FrameIterator<'zstd, R> {
 
 		if let Ok(data) = &data {
 			self.uncompressed_read += data.len() as u64;
-			self.hasher.update(&data);
+			self.hasher.update(data);
 		}
 
 		Some(data)

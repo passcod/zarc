@@ -51,14 +51,14 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		Self::write_element(
 			&mut directory,
 			&mut hasher,
-			&Element::Edition(Edition {
+			&Element::Edition(Box::new(Edition {
 				number: self.edition,
 				public_key: public_key.clone(),
 				written_at: Timestamp::now(),
 				digest_type,
 				signature_type,
 				user_metadata: Default::default(),
-			}),
+			})),
 		)?;
 
 		for (name, indices) in take(&mut self.files_by_name) {
@@ -74,24 +74,32 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 				if let Some(digest) = &file.digest {
 					// if we've already written it, this will be None
 					if let Some(frame) = self.frames.remove(digest) {
-						Self::write_element(&mut directory, &mut hasher, &Element::Frame(frame))?;
+						Self::write_element(
+							&mut directory,
+							&mut hasher,
+							&Element::Frame(Box::new(frame)),
+						)?;
 					}
 				}
 
-				Self::write_element(&mut directory, &mut hasher, &Element::File(file))?;
+				Self::write_element(&mut directory, &mut hasher, &Element::File(Box::new(file)))?;
 			}
 		}
 
 		// we should have written every frame, but just in case
 		// (or if user inserted frames not linked to files)
 		for frame in take(&mut self.frames).into_values() {
-			Self::write_element(&mut directory, &mut hasher, &Element::Frame(frame))?;
+			Self::write_element(
+				&mut directory,
+				&mut hasher,
+				&Element::Frame(Box::new(frame)),
+			)?;
 		}
 
 		let digest = hasher.finalize();
 		trace!(?digest, "hashed directory");
 		let digest = digest.as_bytes();
-		let signature = self.key.try_sign(digest).map_err(|err| Error::other(err))?;
+		let signature = self.key.try_sign(digest).map_err(Error::other)?;
 		trace!(?signature, "signed directory hash");
 
 		let bytes = self.write_compressed_frame(&directory)?;
@@ -104,7 +112,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 			signature_type,
 			directory_offset: 0,
 			directory_uncompressed_size: directory.len() as _,
-			public_key: public_key.clone().into(),
+			public_key: public_key.clone(),
 			digest: Digest(digest.to_vec()),
 			signature: Signature(signature.to_vec()),
 		};

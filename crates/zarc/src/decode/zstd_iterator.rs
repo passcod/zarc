@@ -141,7 +141,9 @@ impl<'zstd, R: Read + Seek> ZstdFrameIterator<'zstd, R> {
 		let output_written = output.as_slice().len();
 		trace!(bytes = output_written, "zstd has finished with the input");
 
+		#[allow(clippy::drop_non_drop)]
 		drop(output); // to release the mutable borrow on output_buf
+
 		if output_written != output_buf.len() {
 			trace!("shrink output buffer to actual written size");
 			output_buf.truncate(output_written);

@@ -95,7 +95,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 	/// Sign user-provided data.
 	#[instrument(level = "trace", skip(self))]
 	pub fn sign_user_data(&self, data: &[u8]) -> Result<Signature> {
-		let signature = self.key.try_sign(data).map_err(|err| Error::other(err))?;
+		let signature = self.key.try_sign(data).map_err(Error::other)?;
 		Ok(Signature(signature.to_vec()))
 	}
 

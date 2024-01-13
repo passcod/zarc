@@ -34,10 +34,8 @@ pub(crate) fn unpack(args: UnpackArgs) -> miette::Result<()> {
 
 	for entry in zarc.files() {
 		let name = entry.name.to_path().display().to_string();
-		if !args.filter.is_empty() {
-			if !args.filter.iter().any(|filter| filter.is_match(&name)) {
-				continue;
-			}
+		if !args.filter.is_empty() && !args.filter.iter().any(|filter| filter.is_match(&name)) {
+			continue;
 		}
 
 		if entry.is_dir() {
@@ -74,13 +72,14 @@ fn extract_file(
 	}
 
 	let mut file = File::create(path).into_diagnostic()?;
-	let Some(mut frame) = zarc.read_content_frame(&digest).into_diagnostic()? else {
+	let Some(mut frame) = zarc.read_content_frame(digest).into_diagnostic()? else {
 		warn!("frame not found");
 		return Ok(());
 	};
 
 	for bytes in &mut frame {
-		file.write_all(&bytes.into_diagnostic()?).unwrap();
+		file.write_all(&bytes.into_diagnostic()?)
+			.into_diagnostic()?;
 	}
 	if !frame.verify().unwrap_or(false) {
 		error!(path=?entry.name, "frame verification failed!");
