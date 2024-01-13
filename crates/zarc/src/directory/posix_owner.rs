@@ -1,6 +1,15 @@
+use std::sync::Mutex;
+
+#[cfg(unix)]
+use crate::owner_cache::OwnerCache;
 use minicbor::{data::Type, Decode, Decoder, Encode, Encoder};
 #[cfg(unix)]
 use nix::unistd::{Gid, Group, Uid, User};
+
+#[cfg(unix)]
+thread_local! {
+	static OWNER_CACHE: Mutex<OwnerCache> = Mutex::new(OwnerCache::default());
+}
 
 /// POSIX owner information (user or group).
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -22,9 +31,13 @@ impl PosixOwner {
 	pub fn from_uid(uid: u32) -> std::io::Result<Option<Self>> {
 		#[cfg(unix)]
 		{
-			User::from_uid(Uid::from_raw(uid))
+			OWNER_CACHE
+				.with(|oc| {
+					oc.lock()
+						.expect("owner cache poisoned")
+						.user_from_uid(Uid::from_raw(uid))
+				})
 				.map(|u| u.map(Into::into))
-				.map_err(Into::into)
 		}
 
 		#[cfg(not(unix))]
@@ -45,9 +58,13 @@ impl PosixOwner {
 	pub fn from_gid(gid: u32) -> std::io::Result<Option<Self>> {
 		#[cfg(unix)]
 		{
-			Group::from_gid(Gid::from_raw(gid))
+			OWNER_CACHE
+				.with(|oc| {
+					oc.lock()
+						.expect("owner cache poisoned")
+						.group_from_gid(Gid::from_raw(gid))
+				})
 				.map(|u| u.map(Into::into))
-				.map_err(Into::into)
 		}
 
 		#[cfg(not(unix))]
@@ -82,14 +99,24 @@ impl PosixOwner {
 				name: None,
 			} => u32::try_from(*id)
 				.map_err(std::io::Error::other)
-				.and_then(|id| User::from_uid(Uid::from_raw(id)).map_err(Into::into))
+				.and_then(|uid| {
+					OWNER_CACHE.with(|oc| {
+						oc.lock()
+							.expect("owner cache poisoned")
+							.user_from_uid(Uid::from_raw(uid))
+					})
+				})
 				.map(|u| u.map(|u| u.uid)),
 
 			Self {
 				id: None,
 				name: Some(name),
-			} => User::from_name(name)
-				.map_err(Into::into)
+			} => OWNER_CACHE
+				.with(|oc| {
+					oc.lock()
+						.expect("owner cache poisoned")
+						.user_from_name(name)
+				})
 				.map(|u| u.map(|u| u.uid)),
 
 			Self {
@@ -98,7 +125,11 @@ impl PosixOwner {
 			} => {
 				let id = u32::try_from(*id).map_err(std::io::Error::other)?;
 
-				if let Some(user) = User::from_name(name)? {
+				if let Some(user) = OWNER_CACHE.with(|oc| {
+					oc.lock()
+						.expect("owner cache poisoned")
+						.user_from_name(name)
+				})? {
 					Ok(Some(user.uid))
 				} else {
 					Ok(Some(Uid::from_raw(id)))
@@ -130,14 +161,24 @@ impl PosixOwner {
 				name: None,
 			} => u32::try_from(*id)
 				.map_err(std::io::Error::other)
-				.and_then(|id| Group::from_gid(Gid::from_raw(id)).map_err(Into::into))
+				.and_then(|gid| {
+					OWNER_CACHE.with(|oc| {
+						oc.lock()
+							.expect("owner cache poisoned")
+							.group_from_gid(Gid::from_raw(gid))
+					})
+				})
 				.map(|u| u.map(|u| u.gid)),
 
 			Self {
 				id: None,
 				name: Some(name),
-			} => Group::from_name(name)
-				.map_err(Into::into)
+			} => OWNER_CACHE
+				.with(|oc| {
+					oc.lock()
+						.expect("owner cache poisoned")
+						.group_from_name(name)
+				})
 				.map(|u| u.map(|u| u.gid)),
 
 			Self {
@@ -146,7 +187,11 @@ impl PosixOwner {
 			} => {
 				let id = u32::try_from(*id).map_err(std::io::Error::other)?;
 
-				if let Some(group) = Group::from_name(name)? {
+				if let Some(group) = OWNER_CACHE.with(|oc| {
+					oc.lock()
+						.expect("owner cache poisoned")
+						.group_from_name(name)
+				})? {
 					Ok(Some(group.gid))
 				} else {
 					Ok(Some(Gid::from_raw(id)))

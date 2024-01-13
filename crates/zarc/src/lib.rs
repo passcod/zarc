@@ -20,6 +20,8 @@ pub mod integrity;
 #[cfg(feature = "metadata")]
 pub mod metadata;
 pub mod ondemand;
+#[cfg(unix)]
+pub mod owner_cache;
 pub mod trailer;
 
 pub(crate) fn map_zstd_error(code: usize) -> std::io::Error {
