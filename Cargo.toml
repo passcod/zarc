@@ -10,7 +10,7 @@ members = [
 lto = true
 debug = 1 # for stack traces
 codegen-units = 1
-strip = "symbols"
+# strip = "symbols"
 
 [profile.dev.build-override]
 opt-level = 0
