@@ -3,7 +3,7 @@ use std::mem::take;
 use blake3::Hasher;
 use deku::DekuContainerRead;
 use ozarc::framing::{ZstandardBlockHeader, ZstandardFrameHeader};
-use tracing::{debug, instrument, trace};
+use tracing::{debug, instrument, trace, warn};
 
 use crate::{
 	directory::{Element, ElementFrame},
@@ -73,7 +73,12 @@ impl<R: OnDemand> Decoder<R> {
 				bytes = rest;
 
 				trace!(?element, "read element");
-				match element.element()? {
+				let Some(element) = element.element()? else {
+					warn!(kind=?element.kind, "unknown element kind");
+					continue;
+				};
+
+				match element {
 					Element::Edition(edition) => {
 						editions.insert(edition.number, *edition);
 					}

@@ -38,29 +38,42 @@ impl ElementFrame {
 	}
 
 	/// Decode the CBOR payload into its [Element].
-	pub fn element(&self) -> Result<Element, minicbor::decode::Error> {
+	///
+	/// Returns `Ok(None)` if the element kind is unknown.
+	pub fn element(&self) -> Result<Option<Element>, minicbor::decode::Error> {
 		match self.kind {
-			ElementKind::Edition => minicbor::decode(&self.payload).map(Element::Edition),
-			ElementKind::File => minicbor::decode(&self.payload).map(Element::File),
-			ElementKind::Frame => minicbor::decode(&self.payload).map(Element::Frame),
+			ElementKind::Edition => {
+				minicbor::decode(&self.payload).map(|e| Some(Element::Edition(e)))
+			}
+			ElementKind::File => minicbor::decode(&self.payload).map(|e| Some(Element::File(e))),
+			ElementKind::Frame => minicbor::decode(&self.payload).map(|e| Some(Element::Frame(e))),
+			ElementKind::Unknown(_) => Ok(None),
 		}
 	}
 }
 
-/// Kind of an element (as a unit enum).
+/// Kind of an element (including unknown variant).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, DekuRead, DekuWrite)]
 #[deku(endian = "endian", type = "u8", ctx = "endian: deku::ctx::Endian")]
-#[repr(u8)]
 pub enum ElementKind {
 	/// [Edition]
-	Edition = 1,
+	#[deku(id = "1")]
+	Edition,
+
 	/// [File]
-	File = 2,
+	#[deku(id = "2")]
+	File,
+
 	/// [Frame]
-	Frame = 3,
+	#[deku(id = "3")]
+	Frame,
+
+	/// Unknown element kind.
+	#[deku(id_pat = "_")]
+	Unknown(u8),
 }
 
-/// Element enum.
+/// Elements supported by Zarc.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Element {
 	/// [Edition]
