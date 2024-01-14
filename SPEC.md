@@ -378,9 +378,9 @@ This is a Skippable frame with magic nibble = F.
 
 It contains:
 
-| **`Digest`**| **`Digest Type`** |
-|:-----------:|:-----------------:|
-|  _n_ bytes  |       1 byte      |
+| _reserved_ | **`Digest Type`** | **`Digest`**| **`Digest Type`** |
+|:----------:|:-----------------:|:-----------:|:-----------------:|
+|   1 byte   |       1 byte      |  _n_ bytes  |       1 byte      |
 
 |   **`Directory Offset`**  | **`Uncompressed Length`** |
 |:-------------------------:|:-------------------------:|
@@ -391,11 +391,12 @@ It contains:
 |      1 byte      |       1 byte       |   3 bytes   |
 |                  |        `01`        |  `65 aa dc` |
 
-> **Non-normative implementation note:** This looks upside down, because you read it from the end.
-> The last three bytes of a Zarc file will always be `65 aa dc`, _preceded_ by the file version, _preceded_ by the directory version, etc.
-> The fixed-width fields are all at the end, so they can be read by seeking to a fixed offset from the end.
-> The `Digest Type` is then used to derive the lengths of the variable-length `Digest` field.
-> Going 8 bytes further back will yield the Zstd Skippable frame header if you so wish to check that.
+> **Non-normative implementation note:** This looks upside down, because you can read it from the end.
+> The last three bytes of a Zarc file will always be `65 aa dc`, _preceded_ by the version, _preceded_ by the check byte, etc.
+> The critical fixed-width fields are all at the end, so they can be read by seeking to a fixed offset from the end.
+> The `Digest Type` is then used to derive the length of the `Digest` field.
+> It's also duplicated on the other side of the `Digest`, so that the trailer can be read from both sides.
+> Going 8 bytes further back from the 'start' of the trailer will yield the Zstd Skippable frame header if you so wish to check that.
 
 ### `Magic` and `Zarc Version`
 

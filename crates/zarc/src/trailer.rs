@@ -4,19 +4,22 @@
 //! Where [the header][super::header] is used to identify a Zarc file, this is used to actually
 //! decode it.
 //!
-//! The peculiarity of the trailer is that it's parsed backwards from the end. There are three
-//! fields that may be variable in length, and the only way to know where they are is to read two
-//! bytes in the trailer, and because the trailer is at the end of the file, that means those bytes
-//! have to come *after* the variable fields.
+//! The peculiarity of the trailer is that it's parsed backwards from the end. The digest field is
+//! potentially variable in length, and the only way to know its length is to read one of two bytes
+//! in the trailer, at either sides of that variable field.
 //!
 //! However, reading a file backward is obnoxious and possibly slow, so the way this module works is
-//! with the [`Epilogue`], comprising the last eight fields of the trailer, all fixed-size. You
-//! should use [`EPILOGUE_LENGTH`] to seek and read these bytes from the end, parse them, and then
-//! use [`Epilogue::full_length()`] to seek and read the remaining bytes, and finally pass them to
+//! with the [`Epilogue`], comprising the last six fields of the trailer, all fixed-size. You should
+//! use [`EPILOGUE_LENGTH`] to seek and read these bytes from the end, parse them, and then use
+//! [`Epilogue::full_length()`] to seek and read the remaining bytes, and finally pass them to
 //! [`Epilogue::complete()`] to obtain a [`Trailer`].
 //!
 //! Additionally, what you probably want to do for performance is to read, for example, a kilobyte
 //! from the end of the file at once, and then be reasonably sure that the whole trailer is in it.
+//!
+//! The trailer also has [`PROLOGUE_LENGTH`] bytes of "prologue", which this library ignores (but
+//! will write correctly). The prologue contains a duplicate of the digest type, and can be used to
+//! read the trailer "forward", if you really want to, though this library provides no support here.
 
 use deku::prelude::*;
 
@@ -48,6 +51,9 @@ pub struct Trailer {
 impl Trailer {
 	/// Write the trailer to a writer.
 	pub fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+		// reserved field and duplicated digest type
+		writer.write_all(&[0, self.digest_type as u8])?;
+
 		writer.write_all(&self.digest)?;
 
 		let epilogue = Epilogue::from(self)
@@ -121,10 +127,15 @@ impl From<&Trailer> for Epilogue {
 	}
 }
 
+/// Length of the prologue in bytes.
+///
+/// This is the wire length, not the size of the struct.
+pub const PROLOGUE_LENGTH: usize = 2;
+
 /// Length of the epilogue in bytes.
 ///
 /// This is the wire length, not the size of the struct.
-pub const EPILOGUE_LENGTH: usize = 24;
+pub const EPILOGUE_LENGTH: usize = 22;
 
 /// The last eight fields of the trailer, which are all fixed-size.
 #[derive(Clone, Debug, Eq, PartialEq, DekuRead, DekuWrite)]
@@ -163,7 +174,7 @@ pub struct Epilogue {
 impl Epilogue {
 	/// The full length of the trailer including the variable fields.
 	pub const fn full_length(&self) -> usize {
-		EPILOGUE_LENGTH + self.digest_type.digest_len()
+		PROLOGUE_LENGTH + self.digest_type.digest_len() + EPILOGUE_LENGTH
 	}
 
 	/// Reparse the trailer from the full bytes.
