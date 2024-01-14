@@ -20,27 +20,18 @@
 
 use deku::prelude::*;
 
-use super::integrity::{Digest, DigestType, PublicKey, Signature, SignatureType};
+use super::integrity::{Digest, DigestType};
 
 /// Zarc Trailer
 ///
 /// [Spec](https://github.com/passcod/zarc/blob/main/SPEC.md#zarc-trailer)
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Trailer {
-	/// Public key.
-	pub public_key: PublicKey,
-
 	/// Digest of the directory.
 	pub digest: Digest,
 
-	/// Signature over the digest.
-	pub signature: Signature,
-
 	/// Digest (hash) algorithm.
 	pub digest_type: DigestType,
-
-	/// Signature scheme.
-	pub signature_type: SignatureType,
 
 	/// Offset in bytes to the start of the [Directory][crate::directory]'s Zstandard frame.
 	pub directory_offset: i64,
@@ -48,23 +39,16 @@ pub struct Trailer {
 	/// Uncompressed size in bytes of the directory.
 	pub directory_uncompressed_size: u64,
 
-	/// Directory format version number.
+	/// Zarc format version number.
 	///
-	/// Should match [`ZARC_DIRECTORY_VERSION`][crate::ZARC_DIRECTORY_VERSION].
-	pub directory_version: u8,
-
-	/// File format version number.
-	///
-	/// Should match [`ZARC_FILE_VERSION`][crate::ZARC_FILE_VERSION].
-	pub file_version: u8,
+	/// Should match [`ZARC_VERSION`][crate::ZARC_VERSION].
+	pub version: u8,
 }
 
 impl Trailer {
 	/// Write the trailer to a writer.
 	pub fn to_writer<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-		writer.write_all(&self.public_key)?;
 		writer.write_all(&self.digest)?;
-		writer.write_all(&self.signature)?;
 
 		let epilogue = Epilogue::from(self)
 			.to_bytes()
@@ -75,9 +59,7 @@ impl Trailer {
 	/// Write the trailer to a vector.
 	pub fn to_bytes(&self) -> Vec<u8> {
 		let mut bytes = Vec::with_capacity(self.len());
-		bytes.extend(self.public_key.iter());
 		bytes.extend(self.digest.iter());
-		bytes.extend(self.signature.iter());
 
 		// UNWRAP: there's no way to construct an epilogue that doesn't serialise
 		#[allow(clippy::unwrap_used)]
@@ -89,7 +71,7 @@ impl Trailer {
 	/// The full length of the trailer in bytes.
 	#[allow(clippy::len_without_is_empty)] // CLIPPY: this is not a collection
 	pub fn len(&self) -> usize {
-		self.public_key.len() + self.digest.len() + self.signature.len() + EPILOGUE_LENGTH
+		self.digest.len() + EPILOGUE_LENGTH
 	}
 
 	/// Make the offset positive.
@@ -109,9 +91,7 @@ impl Trailer {
 	/// Compute the check byte.
 	pub fn compute_check(&self) -> u8 {
 		let mut bytes = Vec::with_capacity(self.len());
-		bytes.extend(self.public_key.iter());
 		bytes.extend(self.digest.iter());
-		bytes.extend(self.signature.iter());
 
 		// UNWRAP: there's no way to construct an epilogue that doesn't serialise
 		#[allow(clippy::unwrap_used)]
@@ -125,11 +105,9 @@ impl Trailer {
 		Epilogue {
 			check: 0,
 			digest_type: self.digest_type,
-			signature_type: self.signature_type,
 			directory_offset: self.directory_offset,
 			directory_uncompressed_size: self.directory_uncompressed_size,
-			directory_version: self.directory_version,
-			file_version: self.file_version,
+			version: self.version,
 			magic: crate::ZARC_MAGIC.to_vec(),
 		}
 	}
@@ -152,15 +130,8 @@ pub const EPILOGUE_LENGTH: usize = 24;
 #[derive(Clone, Debug, Eq, PartialEq, DekuRead, DekuWrite)]
 #[deku(endian = "little")]
 pub struct Epilogue {
-	/// Check byte.
-	#[deku(bytes = "1")]
-	pub check: u8,
-
 	/// Digest (hash) algorithm.
 	pub digest_type: DigestType,
-
-	/// Signature scheme.
-	pub signature_type: SignatureType,
 
 	/// Offset in bytes to the start of the [Directory][crate::directory]'s Zstandard frame.
 	///
@@ -172,17 +143,15 @@ pub struct Epilogue {
 	#[deku(bytes = "8")]
 	pub directory_uncompressed_size: u64,
 
-	/// Directory format version number.
-	///
-	/// Should match [`ZARC_DIRECTORY_VERSION`][crate::ZARC_DIRECTORY_VERSION].
+	/// Check byte.
 	#[deku(bytes = "1")]
-	pub directory_version: u8,
+	pub check: u8,
 
-	/// File format version number.
+	/// Zarc format version number.
 	///
-	/// Should match [`ZARC_FILE_VERSION`][crate::ZARC_FILE_VERSION].
+	/// Should match [`ZARC_VERSION`][crate::ZARC_VERSION].
 	#[deku(bytes = "1")]
-	pub file_version: u8,
+	pub version: u8,
 
 	/// Magic number.
 	///
@@ -194,10 +163,7 @@ pub struct Epilogue {
 impl Epilogue {
 	/// The full length of the trailer including the variable fields.
 	pub const fn full_length(&self) -> usize {
-		EPILOGUE_LENGTH
-			+ self.signature_type.public_key_len()
-			+ self.signature_type.signature_len()
-			+ self.digest_type.digest_len()
+		EPILOGUE_LENGTH + self.digest_type.digest_len()
 	}
 
 	/// Reparse the trailer from the full bytes.
@@ -212,20 +178,14 @@ impl Epilogue {
 		}
 
 		let head = all_bytes.len() - self.full_length();
-		let pubkey = head + self.signature_type.public_key_len();
-		let digest = pubkey + self.digest_type.digest_len();
-		let signature = digest + self.signature_type.signature_len();
+		let digest = self.digest_type.digest_len();
 
 		Ok(Trailer {
-			public_key: PublicKey(all_bytes[head..pubkey].to_vec()),
-			digest: Digest(all_bytes[pubkey..digest].to_vec()),
-			signature: Signature(all_bytes[digest..signature].to_vec()),
+			digest: Digest(all_bytes[head..digest].to_vec()),
 			digest_type: self.digest_type,
-			signature_type: self.signature_type,
 			directory_offset: self.directory_offset,
 			directory_uncompressed_size: self.directory_uncompressed_size,
-			directory_version: self.directory_version,
-			file_version: self.file_version,
+			version: self.version,
 		})
 	}
 

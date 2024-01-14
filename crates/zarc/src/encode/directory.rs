@@ -5,14 +5,13 @@ use std::{
 
 use blake3::Hasher;
 use deku::DekuContainerWrite;
-use ed25519_dalek::Signer;
 use ozarc::framing::SKIPPABLE_FRAME_OVERHEAD;
 use tracing::{debug, instrument, trace};
 
 use crate::{
-	constants::{ZARC_DIRECTORY_VERSION, ZARC_FILE_VERSION},
+	constants::ZARC_VERSION,
 	directory::{Edition, Element, ElementFrame, Timestamp},
-	integrity::{Digest, DigestType, PublicKey, Signature, SignatureType},
+	integrity::{Digest, DigestType},
 	trailer::Trailer,
 };
 
@@ -37,26 +36,19 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 	/// Write the directory and trailer.
 	///
 	/// Flushes the writer and drops all state.
-	///
-	/// Discards the private key and returns the public key.
 	#[instrument(level = "debug", skip(self))]
-	pub fn finalise(mut self) -> Result<PublicKey> {
+	pub fn finalise(mut self) -> Result<()> {
 		let mut directory = Vec::new();
-		let mut hasher = Hasher::new();
-
-		let public_key = PublicKey(self.key.verifying_key().as_bytes().to_vec());
 		let digest_type = DigestType::Blake3;
-		let signature_type = SignatureType::Ed25519;
+		let mut hasher = Hasher::new(); // TODO: get hasher from DigestType
 
 		Self::write_element(
 			&mut directory,
 			&mut hasher,
 			&Element::Edition(Box::new(Edition {
 				number: self.edition,
-				public_key: public_key.clone(),
 				written_at: Timestamp::now(),
 				digest_type,
-				signature_type,
 				user_metadata: Default::default(),
 			})),
 		)?;
@@ -99,22 +91,16 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		let digest = hasher.finalize();
 		trace!(?digest, "hashed directory");
 		let digest = digest.as_bytes();
-		let signature = self.key.try_sign(digest).map_err(Error::other)?;
-		trace!(?signature, "signed directory hash");
 
 		let bytes = self.write_compressed_frame(&directory)?;
 		trace!(%bytes, "wrote directory");
 
 		let mut trailer = Trailer {
-			file_version: ZARC_FILE_VERSION,
-			directory_version: ZARC_DIRECTORY_VERSION,
+			version: ZARC_VERSION,
 			digest_type,
-			signature_type,
 			directory_offset: 0,
 			directory_uncompressed_size: directory.len() as _,
-			public_key: public_key.clone(),
 			digest: Digest(digest.to_vec()),
-			signature: Signature(signature.to_vec()),
 		};
 		trailer.directory_offset = -((bytes + SKIPPABLE_FRAME_OVERHEAD + trailer.len()) as i64);
 		trace!(?trailer, "built trailer");
@@ -132,6 +118,6 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		self.writer.flush()?;
 		trace!("flushed writer");
 
-		Ok(public_key)
+		Ok(())
 	}
 }

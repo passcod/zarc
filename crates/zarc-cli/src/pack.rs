@@ -1,7 +1,6 @@
 use std::{fs::File, path::PathBuf};
 
 use clap::{Parser, ValueHint};
-use rand::rngs::OsRng;
 use tracing::{debug, info};
 use walkdir::WalkDir;
 use zarc::encode::{Encoder, ZstdParameter, ZstdStrategy};
@@ -221,8 +220,7 @@ pub(crate) fn pack(args: PackArgs) -> std::io::Result<()> {
 	let mut file = File::create(args.output)?;
 
 	info!("initialise encoder");
-	let mut csprng = OsRng;
-	let mut zarc = Encoder::new(&mut file, &mut csprng)?;
+	let mut zarc = Encoder::new(&mut file)?;
 
 	debug!("enable zstd checksums");
 	zarc.set_zstd_parameter(ZstdParameter::ChecksumFlag(true))?;
@@ -266,7 +264,6 @@ pub(crate) fn pack(args: PackArgs) -> std::io::Result<()> {
 	}
 
 	info!("finalising zarc");
-	let public_key = zarc.finalise()?;
-	println!("zarc public key: {}", bs64::encode(&public_key));
+	zarc.finalise()?;
 	Ok(())
 }

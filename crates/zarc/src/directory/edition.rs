@@ -3,7 +3,7 @@ use std::{collections::HashMap, num::NonZeroU16};
 use minicbor::{Decode, Encode};
 
 use super::{strings::AttributeValue, timestamps::Timestamp};
-use crate::integrity::{DigestType, PublicKey, SignatureType};
+use crate::integrity::DigestType;
 
 /// Metadata about a (previous) version of the Zarc Directory
 ///
@@ -17,21 +17,13 @@ pub struct Edition {
 	#[n(0)]
 	pub number: NonZeroU16,
 
-	/// Public key of this edition.
-	#[n(1)]
-	pub public_key: PublicKey,
-
 	/// Version creation date.
-	#[n(2)]
+	#[n(1)]
 	pub written_at: Timestamp,
 
 	/// Digest algorithm used by this edition.
-	#[n(3)]
+	#[n(2)]
 	pub digest_type: DigestType,
-
-	/// Signature algorithm used by this edition.
-	#[n(4)]
-	pub signature_type: SignatureType,
 
 	/// User Metadata of that version.
 	///

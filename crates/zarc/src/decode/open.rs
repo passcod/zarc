@@ -54,15 +54,15 @@ impl<R: OnDemand> Decoder<R> {
 			Header::from_reader((&mut content, 0)).map_err(SimpleError::from_deku)?;
 		debug!(%bits_read, header=format!("{header:02x?}"), "read zarc header");
 
-		debug_assert_ne!(crate::constants::ZARC_FILE_VERSION, 0);
-		debug_assert_ne!(header.file_version, 0);
-		if header.file_version != crate::constants::ZARC_FILE_VERSION {
-			return Err(ErrorKind::UnsupportedFileVersion(header.file_version).into());
+		debug_assert_ne!(crate::constants::ZARC_VERSION, 0);
+		debug_assert_ne!(header.version, 0);
+		if header.version != crate::constants::ZARC_VERSION {
+			return Err(ErrorKind::UnsupportedZarcVersion(header.version).into());
 		}
 
 		Ok(unsafe {
 			// SAFETY: the version is valid and zarc versions start at 1
-			NonZeroU8::new_unchecked(header.file_version)
+			NonZeroU8::new_unchecked(header.version)
 		})
 	}
 
@@ -139,10 +139,10 @@ impl<R: OnDemand> Decoder<R> {
 	///
 	/// You'll then need to read the directory and extract some files!
 	pub fn open(reader: R) -> Result<Self> {
-		let file_version = Self::read_header(&reader)?;
+		let version = Self::read_header(&reader)?;
 		let (trailer, file_length) = Self::read_trailer(&reader)?;
-		if file_version.get() != trailer.file_version {
-			warn!(header=%file_version, trailer=%trailer.file_version, "file version mismatch in header and trailer");
+		if version.get() != trailer.version {
+			warn!(header=%version, trailer=%trailer.version, "zarc version mismatch in header and trailer");
 		}
 
 		Ok(Self {

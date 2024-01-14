@@ -2,7 +2,7 @@ use std::num::NonZeroU16;
 
 use minicbor::{Decode, Encode};
 
-use crate::integrity::{Digest, Signature};
+use crate::integrity::Digest;
 
 /// Zarc Directory Frame Entry
 ///
@@ -22,15 +22,11 @@ pub struct Frame {
 	#[n(2)]
 	pub digest: Digest,
 
-	/// Signature against hash.
-	#[n(3)]
-	pub signature: Signature,
-
 	/// Entire frame length in bytes.
-	#[n(4)]
+	#[n(3)]
 	pub length: u64,
 
 	/// Uncompressed content size in bytes.
-	#[n(5)]
+	#[n(4)]
 	pub uncompressed: u64,
 }

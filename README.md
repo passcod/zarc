@@ -10,7 +10,6 @@ Do not use for production data.
 Zarc provides some interesting features, like:
 
 - always-on strong hashing and integrity verification;
-- automatic per-archive "keyless" signing;
 - full support for extended attributes (xattrs);
 - high resolution timestamps;
 - user-provided metadata at both archive and file level;
@@ -44,7 +43,6 @@ Get started by packing a few files:
 
 ```console
 $ zarc pack --output myfirst.zarc  a.file and folder
-zarc public key: 4D0CYzSBrmO+BqSfkdXKiA/p4yXNwgl40slgVtUympI=
 
 $ ls -lh myfirst.zarc
 -rw-r--r-- 1 you you 16K Dec 30 01:34 myfirst.zarc
@@ -115,9 +113,6 @@ frame: 8
   zarc: directory (directory format v1) (4823 bytes)
     hash algorithm: Blake3
       directory digest: valid ✅
-    signature scheme: Ed25519
-    public key: xRME2Ip754MEcky6/v6mZEFACWuJwccHx+n+Xly3rDA=
-      directory signature: valid ✅
     files: 5
       file 0: ZWPZswtyW69gw+VyEGyE2h3ClqK05Y6uJ545LFu3srM=
         path: (4 components)
@@ -140,11 +135,9 @@ frame: 8
       frame 0: ZWPZswtyW69gw+VyEGyE2h3ClqK05Y6uJ545LFu3srM=
         offset: 151 bytes
         uncompressed size: 390 bytes
-        signature: ZH0rKbvBrT6e+VhDtQzyXyC7RGXQ62IbzdVgEXmM6hFGen73dLrw2ohZc1pVhTUuTQ1vC338JFVHL9nr36CAAA== (✅)
       frame 1: pN1pVhJbe0vXIgf8VP7TvqquOJZTSUVYW7QEm0XdVdk=
         offset: 439 bytes
         uncompressed size: 13830 bytes
-        signature: 6m3B+zzIxVOymme4+APplXWbv4z9iTzuB3eZoWmfDaeLnhw3Yu5s2+IUAPzrUtNPf+0mgPKjtjhZwlFLKw7wDw== (✅)
       frame 2: Thzfvpr+lCZCiXOxwuwtZr3mPXLf2tt1oVTSX/g3dpw=
         offset: 4528 bytes
         uncompressed size: 431 bytes
@@ -194,16 +187,6 @@ Content integrity is per-file; if a Zarc is corrupted but its directory is still
 - you can see exactly which files are affected, and
 - you can safely unpack intact files.
 
-### Automatic keyless signing
-
-Zarc generates a unique keypair every time it packs (or repacks) an archive, and signs every checksum.
-It then prints the public key and discards the secret one.
-That is used to further verify integrity.
-
-You can generate an extra signature for external data with `--attest 'some content'`.
-This will print the signature for this data, and you can use that to prove authorship or provenance,
-or to hook into another PKI scheme.
-
 ### Universal paths
 
 Paths are stored split into components, not as literal strings.
@@ -250,7 +233,7 @@ If new content duplicates the existing, it won't store new copies.
 If new files are added that have the same path as existing ones, both the new and old metadata are kept.
 By default, Zarc will unpack the last version of a path, but you can change that.
 
-Appending to a Zarc generates a new keypair and keeps metadata about the prior versions for provenance.
+Appending to a Zarc keeps metadata about the prior versions for provenance.
 Zarc stores the insertion date of files and the creation date of the archive itself as well as all prior versions, so you can tell whether a file was appended and when it was created or modified.
 
 ### Complexity and extensibility
@@ -466,7 +449,6 @@ Summary
 - [x] `zarc pack`
   - [ ] `--append`
   - [ ] `-U` and `-u` flags to set user metadata
-  - [ ] `--attest` and `--attest-file` to sign external content
   - [x] `--follow-symlinks`
   - [ ] `--follow[-and-store]-external-symlinks`
   - [x] `--level` to set compression level
@@ -483,8 +465,6 @@ Summary
   - [ ] User/group mappings
 - [ ] `zarc debug`
 - [x] `zarc unpack`
-  - [ ] `--key` to check public key matches
-  - [ ] `--attest` and `--attest-file` to check external signature
   - [ ] Unpack symlinks
   - [ ] Unpack linux attributes
   - [ ] Unpack linux xattrs
@@ -504,4 +484,5 @@ Summary
 - [ ] Profile and optimise
 - [ ] Pure rust zstd?
   - [ ] Seekable files by adding a blockmap (map of file offsets to blocks)?
-- [ ] Dictionary sig/hash to provide trust that a dictionary on decode is the same as one used on encode
+- [ ] Dictionary hash to provide trust that a dictionary on decode is the same as one used on encode
+- [ ] Bao hashing for streaming verification?

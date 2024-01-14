@@ -9,7 +9,7 @@
 
 use deku::prelude::*;
 
-use super::constants::ZARC_MAGIC;
+use super::constants::{ZARC_MAGIC, ZARC_VERSION};
 
 /// Zarc Header
 ///
@@ -21,9 +21,9 @@ pub struct Header {
 	#[deku(count = "3", assert = "*magic == ZARC_MAGIC")]
 	pub magic: Vec<u8>,
 
-	/// File format version number. Should match [`ZARC_FILE_VERSION`][super::constants::ZARC_FILE_VERSION].
+	/// Zarc format version number. Should match [`ZARC_VERSION`].
 	#[deku(bytes = "1")]
-	pub file_version: u8,
+	pub version: u8,
 }
 
 /// Static file magic
@@ -31,9 +31,10 @@ pub struct Header {
 /// This is a zstd Skippable frame containing the Zarc Header, as a hardcoded constant.
 ///
 /// In a valid Zarc file, the first 12 bytes will match exactly.
+#[rustfmt::skip]
 pub const FILE_MAGIC: [u8; 12] = [
 	0x50, 0x2A, 0x4D, 0x18, // zstd skippable frame
 	0x04, 0x00, 0x00, 0x00, // payload size = 4 bytes
 	0x65, 0xAA, 0xDC, // zarc magic
-	0x01, // zarc file version
+	ZARC_VERSION, // zarc version
 ];

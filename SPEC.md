@@ -7,7 +7,6 @@ Zarc is a toy file format: it has received no review, only has a single implemen
 Zarc is intended to be fairly simple to parse given a zstd decoder, while providing some interesting features, like:
 
 - always-on strong hashing and integrity verification;
-- automatic per-archive "keyless" signing;
 - full support for extended attributes (xattrs);
 - high resolution timestamps;
 - user-provided metadata at both archive and file level;
@@ -126,31 +125,17 @@ Creating an edition involves incrementing the edition number, so the latest edit
 
 This is used in Frame and File types as the `Edition` field.
 
-#### Key `1`: Public Key
-
-_Byte string._ **Mandatory.**
-
-The public key of this edition.
-
-This can be used as a more unique ID than the edition number.
-
-#### Key `2`: Written At
+#### Key `1`: Written At
 
 _Timestamp or DateTime._ **Mandatory.**
 
 When this version was created.
 
-#### Key `3`: Digest Type
+#### Key `2`: Digest Type
 
 _8-bit unsigned integer._ **Mandatory.**
 
 Same as the Trailer value, the digest type in use by that edition.
-
-#### Key `4`: Signature Type
-
-_8-bit unsigned integer._ **Mandatory.**
-
-Same as the Trailer value, the signature (and public key) type in use by that edition.
 
 #### Key `10`: User Metadata
 
@@ -366,15 +351,7 @@ The digest of the frame contents.
 
 Implementations MUST check that frame contents match this digest (unless "insecure" mode is used).
 
-#### Key `3`: Frame Content Signature
-
-_Byte string._ **Mandatory.**
-
-A signature computed over the Frame Content Hash.
-
-Implementations MUST check that the signature is valid (unless "insecure" mode is used).
-
-#### Key `4`: Framed Size
+#### Key `3`: Framed Size
 
 _Integer._ **Mandatory.**
 
@@ -382,7 +359,7 @@ The size of the entire frame in bytes.
 
 This may be used to request that range of bytes from a remote source without reading too far or incrementally via block information.
 
-#### Key `5`: Uncompressed Content Length
+#### Key `4`: Uncompressed Content Length
 
 _Integer._ **Mandatory.**
 
@@ -401,36 +378,28 @@ This is a Skippable frame with magic nibble = F.
 
 It contains:
 
-| **`Public Key`** | **`Digest`**| **`Signature`** |
-|:----------------:|:-----------:|:---------------:|
-|     _n_ bytes    |  _n_ bytes  |    _n_ bytes    |
-
-| **`Check Byte`** | **`Digest Type`** | **`Signature Type`** |
-|:----------------:|:-----------------:|:--------------------:|
-|      1 byte      |       1 byte      |        1 byte        |
+| **`Digest`**| **`Digest Type`** |
+|:-----------:|:-----------------:|
+|  _n_ bytes  |       1 byte      |
 
 |   **`Directory Offset`**  | **`Uncompressed Length`** |
 |:-------------------------:|:-------------------------:|
 |           8 bytes         |           8 bytes         |
 
-| **`Directory Version`** | **`File Version`** | **`Magic`** |
-|:-----------------------:|:------------------:|:-----------:|
-|          1 byte         |       1 byte       |   3 bytes   |
-|           `01`          |        `01`        |  `65 aa dc` |
+| **`Check Byte`** | **`Zarc Version`** | **`Magic`** |
+|:----------------:|:------------------:|:-----------:|
+|      1 byte      |       1 byte       |   3 bytes   |
+|                  |        `01`        |  `65 aa dc` |
 
 > **Non-normative implementation note:** This looks upside down, because you read it from the end.
 > The last three bytes of a Zarc file will always be `65 aa dc`, _preceded_ by the file version, _preceded_ by the directory version, etc.
 > The fixed-width fields are all at the end, so they can be read by seeking to a fixed offset from the end.
-> The `Digest Type` and `Signature Type` are then used to derive the lengths of the variable fields.
+> The `Digest Type` is then used to derive the lengths of the variable-length `Digest` field.
 > Going 8 bytes further back will yield the Zstd Skippable frame header if you so wish to check that.
 
-### `Magic` and `File Version`
+### `Magic` and `Zarc Version`
 
 These MUST be the same as the values in the Zarc Header.
-
-### `Directory Version`
-
-This MUST be `1`.
 
 ### `Directory Offset`
 
@@ -453,13 +422,6 @@ Defines the algorithm used for computing digests, as well as the length of the d
 
 - `0`: not used. This value must not appear.
 - `1`: [BLAKE3](https://github.com/BLAKE3-team/BLAKE3) hash function, 32-byte digests.
-
-### `Signature Type`
-
-Defines the algorithm used for computing signatures, as well as the length of the public key and signature fields:
-
-- `0`: not used. This value must not appear.
-- `1`: [Ed25519](https://en.wikipedia.org/wiki/EdDSA#Ed25519) signature scheme, 32-byte public key, 64-byte signature.
 
 ### `Check Byte`
 

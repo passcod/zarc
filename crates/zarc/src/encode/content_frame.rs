@@ -1,14 +1,9 @@
 use std::io::{Error, Result, Write};
 
-use ed25519_dalek::Signer;
 use tracing::{instrument, trace};
 use zstd_safe::ResetDirective;
 
-use crate::{
-	directory::Frame,
-	integrity::{Digest, Signature},
-	map_zstd_error,
-};
+use crate::{directory::Frame, integrity::Digest, map_zstd_error};
 
 use super::Encoder;
 
@@ -37,15 +32,6 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 			return Ok(digest);
 		}
 
-		// compute signature
-		let signature = Signature(
-			self.key
-				.try_sign(digest.as_slice())
-				.map_err(Error::other)?
-				.to_vec(),
-		);
-		trace!(signature=%format!("{signature:02x?}"), "computed signature");
-
 		let bytes = if self.compress {
 			// start new compression context
 			self.zstd
@@ -65,7 +51,6 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 				edition: self.edition,
 				offset,
 				digest: digest.clone(),
-				signature,
 				length: bytes as _,
 				uncompressed: uncompressed_size as _,
 			},
