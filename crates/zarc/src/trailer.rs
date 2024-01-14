@@ -97,6 +97,7 @@ impl Trailer {
 	/// Compute the check byte.
 	pub fn compute_check(&self) -> u8 {
 		let mut bytes = Vec::with_capacity(self.len());
+		bytes.extend(&[0, self.digest_type as u8]);
 		bytes.extend(self.digest.iter());
 
 		// UNWRAP: there's no way to construct an epilogue that doesn't serialise

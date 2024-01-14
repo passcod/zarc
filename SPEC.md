@@ -1,6 +1,6 @@
 # Introduction
 
-Zarc is a file format specified on top of the [Zstandard Compression Format][Zstd Format], at this time version 0.4.0.
+Zarc is a file format specified on top of the Zstandard Compression Format aka RFC8878.
 
 Zarc is a toy file format: it has received no review, only has a single implementation, and is not considered mature enough for serious use.
 
@@ -15,11 +15,26 @@ Zarc is intended to be fairly simple to parse given a zstd decoder, while provid
 - appending files is reasonably cheap;
 - capable of handling archives larger than memory, or even archives containing more file metadata than would fit in memory (allowed by spec but not yet implemented).
 
+## Version
+
+The version of the Zarc format is 1.
+
+The version of this spec is 1.0.0.
+
 **CAUTION:** the format is currently unstable and changes without version bump or notice.
 
-# [Zstd Format]
+## Magic
 
-[Zstd Format]: https://datatracker.ietf.org/doc/html/rfc8878
+The Zarc magic number is 0xDCAA65 in little-endian.
+
+It is the string `Zarc` *de*coded as Base64:
+
+```console
+$ echo -n 'Zarc' | base64 -d | hexyl -p
+65 aa dc
+```
+
+## Zstd Format
 
 Here's a quick recap of the zstd format:
 
@@ -44,35 +59,32 @@ Here's a quick recap of the zstd format:
       3. Reserved
 - Skippable frames:
   - `[magic][size][data]`
-  - Magic is 0x184D2A5? where the last nibble **?** is any value from 0 to F
+  - Magic is 0x184D2A5? where the last nibble **?** is any value from 0x0 to 0xF
   - Size is unsigned 32-bit int
 
 Further reading:
 - Informational RFC8878: <https://datatracker.ietf.org/doc/html/rfc8878>
 - Most up-to-date spec: <https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md>
 
-# Magic
+## Zarc Format
 
-The Zarc magic number is 0xDCAA65 in little-endian.
+A Zarc is a defined sequence of zstd frames:
 
-It is the string `Zarc` *de*coded as Base64:
+- one **[Header](#zarc-header)**, a Skippable frame (0x0), used to identify a file as a Zarc
+- zero or more **Zstandard frames**, one for each file (modulo deduplication and special files)
+- one **[Directory](#zarc-directory)**, a Zstandard (compressed) frame, which contains file list and metadata
+- one **[Trailer](#zarc-trailer)**, a Skippable frame (0xF), used to find and check the Directory
 
-```console
-$ echo -n 'Zarc' | base64 -d | hexyl -p
-65 aa dc
-```
+Zarcs are explicitly files: this is not a format suitable for streaming from a network location,
+unless random access / seek semantics are available (e.g. using the `Range` HTTP header).
 
-# Format
-
-A Zarc is a defined sequence of zstd frames.
-
-## Zarc Header
+# Zarc Header
 
 This is a Skippable frame with magic nibble = 0.
 
 It contains:
 
-| **`Magic`** | **`File Version`** |
+| **`Magic`** | **`Zarc Version`** |
 |:-----------:|:------------------:|
 |   3 bytes   |       1 byte       |
 |  `65 aa dc` |        `01`        |
@@ -84,11 +96,7 @@ This combined with the Skippable frame header, makes a Zarc file always start wi
 |      4 bytes     |      4 bytes     |     3 bytes      |          1 byte         |
 |   `50 2a 4d 18`  |   `04 00 00 00`  |    `65 aa dc`    |           `01`          |
 
-## Compressed File Content
-
-These are zero or more Zstandard frames, containing actual file content.
-
-## Zarc Directory
+# Zarc Directory
 
 This is a Zstandard frame.
 
@@ -107,14 +115,14 @@ Implementations MUST ignore Element Kinds they do not recognise.
 > **Non-normative note:** the _reserved_ byte is there mainly for possible expansion of the payload length.
 > 64K per element looks pretty large from here, but who knows what the future brings.
 
-### Kind `1`: Editions
+## Kind `1`: Editions
 
 _Map: unsigned integer keys -> CBOR._
 
 Editions record core metadata about an archive, and also provide a mechanism for retaining the metadata of _previous versions_ of the archive, if it gets appended or edited.
 At least one edition must be present.
 
-#### Key `0`: Number
+### Key `0`: Number
 
 _Non-zero unsigned integer._ **Mandatory.**
 
@@ -125,35 +133,35 @@ Creating an edition involves incrementing the edition number, so the latest edit
 
 This is used in Frame and File types as the `Edition` field.
 
-#### Key `1`: Written At
+### Key `1`: Written At
 
 _Timestamp or DateTime._ **Mandatory.**
 
 When this version was created.
 
-#### Key `2`: Digest Type
+### Key `2`: Digest Type
 
 _8-bit unsigned integer._ **Mandatory.**
 
 Same as the Trailer value, the digest type in use by that edition.
 
-#### Key `10`: User Metadata
+### Key `10`: User Metadata
 
 _Map: text string keys -> boolean or text or byte string._ **Optional.**
 
 User metadata of this edition.
 
-### Kind `2`: Files
+## Kind `2`: Files
 
 _Map: unsigned integer keys -> CBOR._
 
-#### Key `0`: Edition
+### Key `0`: Edition
 
 _Unsigned integer._ **Mandatory.**
 
 The edition this file entry was added to the archive.
 
-#### Key `1`: Name
+### Key `1`: Name
 
 _Array of: text string or byte string._ **Mandatory.**
 
@@ -181,7 +189,7 @@ Pathnames do not encode whether a path is absolute or relative: all paths inside
 It is possible to have several identical pathname in a Zarc Directory.
 Implementations SHOULD provide an option to use the first or last or other selection criteria, but MUST default to preferring the last of a set of identical pathnames.
 
-#### Key `2`: Frame Digest
+### Key `2`: Frame Digest
 
 _Byte string._ **Conditional.**
 
@@ -194,7 +202,7 @@ The algorithm of the hash is described by the **Hash Algorithm** field above.
 
 This may be absent for some special files (described later).
 
-#### Key `3`: POSIX File Mode
+### Key `3`: POSIX File Mode
 
 _Unsigned integer._ **Optional.**
 
@@ -202,7 +210,7 @@ Unix mode bits as an unsigned 32-bit integer.
 
 If this is not set, implementations SHOULD use a default mode as appropriate.
 
-#### Key `4`: POSIX File Owner
+### Key `4`: POSIX File Owner
 
 _Tuple (encoded as an array)._ **Optional.**
 
@@ -217,7 +225,7 @@ There SHOULD NOT be more than one unsigned integer; if there are, the last value
 Implementations SHOULD prefer the name to the ID if there is an existing user named thus on the system with a different ID.
 Implementations SHOULD prefer to encode IDs as 32-bit unsigned integers, but MUST accept 8-bit, 16-bit, and 64-bit unsigned integers as well.
 
-#### Key `5`: POSIX File Group
+### Key `5`: POSIX File Group
 
 _Tuple (encoded as an array)._ **Optional.**
 
@@ -229,7 +237,7 @@ This is a structure with at least one of the following types of data:
 
 Implementations SHOULD prefer the name to the ID if there is an existing group named thus on the system with a different ID.
 
-#### Key `6`: File Timestamps
+### Key `6`: File Timestamps
 
 _Map: unsigned integer keys -> timestamp._ **Optional.**
 
@@ -245,7 +253,7 @@ Timestamps can be stored in either:
 
 > **Non-normative implementation note:** the Zarc reference implementation _accepts_ all formats for a timestamp, but always _writes_ RFC3339 text string datetimes.
 
-#### Key `7`: Special File Types
+### Key `7`: Special File Types
 
 _Pair: [unsigned integer, (pathname)?]._ **Optional.**
 
@@ -282,13 +290,13 @@ Pathnames (as the conditional second array item) are either:
 
 The second form is preferred, for portability.
 
-#### Key `10`: File User Metadata
+### Key `10`: File User Metadata
 
 _Map: text string keys -> boolean or text or byte string._ **Optional.**
 
 Arbitrary user-provided metadata for this file entry.
 
-#### Key `11`: File Attributes
+### Key `11`: File Attributes
 
 _Map: text string keys -> boolean or text or byte string._ **Optional.**
 
@@ -312,7 +320,7 @@ OR be one of these defined unprefixed values:
 
 > **Note:** attributes are metadata only, they have no bearing on the Zarc file format semantics.
 
-#### Key `12`: Extended File Attributes
+### Key `12`: Extended File Attributes
 
 _Map: text string keys -> boolean or text or byte string._ **Optional.**
 
@@ -323,19 +331,19 @@ Zarc imposes no restriction on the format of attribute names, nor on the content
 Implementations MAY ignore extended attributes if obtaining or setting them is impossible or impractical.
 On Linux, implementations MAY assume a `user` namespace for unprefixed keys.
 
-### Kind `3`: Frames
+## Kind `3`: Frames
 
 _Map: unsigned integer keys -> CBOR._ **Mandatory, collect-up.**
 
 Structures of this type SHOULD appear in offset order.
 
-#### Key `0`: Edition Added
+### Key `0`: Edition Added
 
 _Unsigned integer._ **Mandatory.**
 
 The edition this frame was added to the archive.
 
-#### Key `1`: Frame Offset
+### Key `1`: Frame Offset
 
 _Integer._ **Mandatory.**
 
@@ -343,7 +351,7 @@ The offset in bytes from the start of the Zarc file to the first byte of the Zst
 
 There MUST NOT be duplicate Frame Offsets in the Frame list.
 
-#### Key `2`: Frame Content Digest
+### Key `2`: Frame Content Digest
 
 _Byte string._ **Mandatory.**
 
@@ -351,7 +359,7 @@ The digest of the frame contents.
 
 Implementations MUST check that frame contents match this digest (unless "insecure" mode is used).
 
-#### Key `3`: Framed Size
+### Key `3`: Framed Size
 
 _Integer._ **Mandatory.**
 
@@ -359,7 +367,7 @@ The size of the entire frame in bytes.
 
 This may be used to request that range of bytes from a remote source without reading too far or incrementally via block information.
 
-#### Key `4`: Uncompressed Content Length
+### Key `4`: Uncompressed Content Length
 
 _Integer._ **Mandatory.**
 
@@ -372,7 +380,7 @@ This can be used to e.g.:
 - preallocate storage before unpacking;
 - estimate the uncompressed total size of the archive.
 
-## Zarc Trailer
+# Zarc Trailer
 
 This is a Skippable frame with magic nibble = F.
 
@@ -397,10 +405,6 @@ It contains:
 > The `Digest Type` is then used to derive the length of the `Digest` field.
 > It's also duplicated on the other side of the `Digest`, so that the trailer can be read from both sides.
 > Going 8 bytes further back from the 'start' of the trailer will yield the Zstd Skippable frame header if you so wish to check that.
-
-### `Magic` and `Zarc Version`
-
-These MUST be the same as the values in the Zarc Header.
 
 ### `Directory Offset`
 
