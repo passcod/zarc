@@ -474,6 +474,12 @@ Summary
   173.58 ± 36.29 times faster than 'tar tf ebooks.tar.zst'
 ```
 
+## Non goals
+
+- **Encryption.** Proper secrecy requires hiding both file contents, file metadata, file length, etc. These impose significant design constraints that Zarc is not interested in entertaining. Use full-file encryption over the top, e.g. using age.
+- **Compatibility with tar or zip.** Zarc is a new format, it is not and will never be compatible with zip and tar tooling.
+- **Splitting.** Zarc assumes a single continuous (but not necessarily contiguous on disk) file as its substrate. If you need to split it (why?), do that separately.
+
 ## TODO
 
 - [x] `zarc pack`
