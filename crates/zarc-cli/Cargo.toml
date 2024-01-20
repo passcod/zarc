@@ -13,6 +13,12 @@ documentation = "https://github.com/passcod/zarc"
 repository = "https://github.com/passcod/zarc"
 readme = "README.md"
 
+[package.metadata.wix]
+upgrade-guid = "96E0968E-C5AC-4BFF-81DE-948816F542C8"
+path-guid = "52718143-483B-4009-8A46-4270582DE95E"
+license = false
+eula = false
+
 [[bin]]
 name = "zarc"
 path = "src/main.rs"

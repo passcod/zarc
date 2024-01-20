@@ -6,11 +6,26 @@ members = [
 	"crates/zarc-cli",
 ]
 
+[workspace.metadata.dist]
+cargo-dist-version = "0.8.0"
+ci = ["github"]
+installers = ["shell", "powershell", "homebrew", "msi"]
+targets = [
+	"aarch64-apple-darwin",
+	"x86_64-apple-darwin",
+	"x86_64-unknown-linux-gnu",
+	"aarch64-unknown-linux-gnu",
+	"x86_64-unknown-linux-musl",
+	"aarch64-unknown-linux-musl",
+	"x86_64-pc-windows-msvc",
+]
+pr-run-mode = "plan"
+hosting = ["axodotdev"]
+
 [profile.release]
 lto = true
 debug = 1 # for stack traces
 codegen-units = 1
-# strip = "symbols"
 
 [profile.dev.build-override]
 opt-level = 0
@@ -19,6 +34,11 @@ debug = false
 debug-assertions = false
 overflow-checks = false
 incremental = false
+
+# The profile that 'cargo dist' will build with
+[profile.dist]
+inherits = "release"
+strip = "symbols"
 
 [profile.release.build-override]
 opt-level = 0
