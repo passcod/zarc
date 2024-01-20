@@ -1,3 +1,4 @@
+#[cfg(unix)]
 use std::sync::Mutex;
 
 #[cfg(unix)]

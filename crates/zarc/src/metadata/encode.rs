@@ -8,11 +8,10 @@ use std::{
 	path::Path,
 };
 
-use tracing::{error, instrument, trace, warn};
+use tracing::{instrument, trace, warn};
 
 use crate::directory::{
-	AttributeValue, CborString, File, Pathname, PosixOwner, SpecialFile, SpecialFileKind,
-	Timestamp, Timestamps,
+	AttributeValue, File, Pathname, PosixOwner, SpecialFile, SpecialFileKind, Timestamp, Timestamps,
 };
 
 /// Build a [`FilemapEntry`] from a filename.
@@ -276,14 +275,8 @@ pub fn file_attributes(
 	{
 		use std::os::windows::fs::MetadataExt;
 		use windows::Win32::Storage::FileSystem;
-		struct BitFlags(u32);
-		impl BitFlags {
-			fn contains(&self, other: u32) -> bool {
-				self.0 & other != 0
-			}
-		}
 
-		let flags = BitFlags(meta.file_attributes());
+		let flags = FileSystem::FILE_FLAGS_AND_ATTRIBUTES(meta.file_attributes());
 
 		return attrs.extend(
 			[
@@ -358,10 +351,13 @@ pub fn file_extended_attributes(path: &Path) -> Result<Option<HashMap<String, At
 			let mut map = HashMap::with_capacity(size_hint.1.unwrap_or(size_hint.0));
 			for osname in list {
 				match osname.to_str() {
-					None => error!(?osname, ?path, "not storing non-Unicode xattr"),
+					None => tracing::error!(?osname, ?path, "not storing non-Unicode xattr"),
 					Some(name) => {
 						if let Some(value) = xattr::get(path, &osname)? {
-							map.insert(name.to_string(), CborString::from_maybe_utf8(value).into());
+							map.insert(
+								name.to_string(),
+								crate::directory::CborString::from_maybe_utf8(value).into(),
+							);
 						}
 					}
 				}

@@ -47,7 +47,7 @@ impl Pathname {
 					}
 					#[cfg(not(unix))]
 					{
-						path.push(String::from_utf8_lossy(bytes));
+						path.push(String::from_utf8_lossy(bytes).to_string());
 					}
 				}
 			}
@@ -90,7 +90,9 @@ impl From<&OsStr> for CborString {
 			#[cfg(windows)]
 			{
 				use std::os::windows::ffi::OsStrExt;
-				Self::Text(String::from_utf16_lossy(&string.encode_wide().collect()))
+				Self::Text(String::from_utf16_lossy(
+					&string.encode_wide().collect::<Vec<u16>>(),
+				))
 			}
 		}
 	}
