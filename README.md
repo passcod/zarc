@@ -35,6 +35,8 @@ That installs the `zarc` CLI tool.
 
 As we rely on an unreleased version of [deku](https://github.com/sharksforarms/deku), this isn't yet published on crates.io.
 
+Alternatively, download binaries: <https://public.axodotdev.host/releases/github/passcod/zarc>
+
 ### Start out
 
 _(Some of the commands shown here [don't exist yet](#todo).)_
