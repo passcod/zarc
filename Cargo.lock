@@ -138,6 +138,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "base64ct"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
+
+[[package]]
 name = "bindgen"
 version = "0.64.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -203,15 +209,6 @@ checksum = "230942ed1f48cb19d7f3f2d57de6acdf66f16f4ecfe30080b235a0da0c20af00"
 dependencies = [
  "gix",
  "time",
-]
-
-[[package]]
-name = "bs64"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8bebebdf2eda473523fed644eaedc4ffc43b6f35fdc6f001eb9f89dca4bd117"
-dependencies = [
- "thiserror",
 ]
 
 [[package]]
@@ -2442,9 +2439,9 @@ dependencies = [
 name = "zarc-cli"
 version = "0.0.0"
 dependencies = [
+ "base64ct",
  "blake3",
  "bosion",
- "bs64",
  "chrono",
  "clap",
  "deku",

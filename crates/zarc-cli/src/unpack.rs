@@ -4,6 +4,7 @@ use std::{
 	path::PathBuf,
 };
 
+use base64ct::{Base64, Encoding};
 use clap::{Parser, ValueHint};
 use miette::{bail, IntoDiagnostic};
 use regex::Regex;
@@ -39,22 +40,22 @@ pub(crate) fn unpack(args: UnpackArgs) -> miette::Result<()> {
 	let mut zarc = Decoder::open(args.input)?;
 
 	if let Some(string) = args.verify {
-		let expected = Digest(bs64::decode(string.as_bytes()).into_diagnostic()?);
+		let expected = Digest(Base64::decode_vec(&string).into_diagnostic()?);
 		if expected != zarc.trailer().digest {
 			bail!(
 				"integrity failure: zarc file digest is {}",
-				bs64::encode(&zarc.trailer().digest)
+				Base64::encode_string(&zarc.trailer().digest)
 			);
 		}
 	} else {
-		eprintln!("digest: {}", bs64::encode(&zarc.trailer().digest));
+		eprintln!("digest: {}", Base64::encode_string(&zarc.trailer().digest));
 	}
 
 	zarc.read_directory()?;
 	let zarc = zarc;
 
 	// zarc.frames().for_each(|frame| {
-	// 	info!(offset=%frame.offset, digest=%bs64::encode(frame.digest.as_slice()), "frame");
+	// 	info!(offset=%frame.offset, digest=%Base64::encode_string(frame.digest.as_slice()), "frame");
 	// });
 
 	let mut unpacked = 0_u64;
@@ -95,7 +96,7 @@ fn extract_file(
 	digest: &zarc::integrity::Digest,
 	zarc: &Decoder<PathBuf>,
 ) -> miette::Result<()> {
-	info!(path=?entry.name.to_path(), digest=%bs64::encode(digest.as_slice()), "unpack file");
+	info!(path=?entry.name.to_path(), digest=%Base64::encode_string(digest.as_slice()), "unpack file");
 	let path = entry.name.to_path();
 
 	if let Some(dir) = path.parent() {

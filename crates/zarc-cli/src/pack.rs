@@ -1,5 +1,6 @@
 use std::{fs::File, path::PathBuf};
 
+use base64ct::{Base64, Encoding};
 use clap::{Parser, ValueHint};
 use tracing::{debug, info};
 use walkdir::WalkDir;
@@ -266,6 +267,6 @@ pub(crate) fn pack(args: PackArgs) -> std::io::Result<()> {
 	info!("finalising zarc");
 	let digest = zarc.finalise()?;
 
-	println!("digest: {}", bs64::encode(&digest));
+	println!("digest: {}", Base64::encode_string(&digest));
 	Ok(())
 }

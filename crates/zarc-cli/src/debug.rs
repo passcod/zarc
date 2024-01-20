@@ -3,6 +3,7 @@ use std::{
 	path::PathBuf,
 };
 
+use base64ct::{Base64, Encoding};
 use clap::{Parser, ValueHint};
 use deku::DekuContainerRead;
 use ed25519_dalek::{Signature, VerifyingKey};
@@ -271,7 +272,7 @@ fn parse_frame<'input>(
 					println!("    files: {}", directory.filemap.len());
 					for (i, file) in directory.filemap.iter().enumerate() {
 						if let Some(hash) = &file.frame_hash {
-							println!("      file {i}: {}", bs64::encode(&hash));
+							println!("      file {i}: {}", Base64::encode_string(&hash));
 						} else {
 							if let Some(special) = &file.special {
 								println!("      file {i}: {:?}", special.kind);
@@ -408,7 +409,7 @@ fn parse_frame<'input>(
 
 					println!("    frames: {}", directory.framelist.len());
 					for (i, file) in directory.framelist.iter().enumerate() {
-						println!("      frame {i}: {}", bs64::encode(&file.frame_hash));
+						println!("      frame {i}: {}", Base64::encode_string(&file.frame_hash));
 						println!("        offset: {} bytes", file.offset);
 						println!(
 							"        uncompressed size: {} bytes",
@@ -418,7 +419,7 @@ fn parse_frame<'input>(
 							println!("        version added: -{}", (n + 1));
 						}
 
-						print!("        signature: {}", bs64::encode(&file.signature));
+						print!("        signature: {}", Base64::encode_string(&file.signature));
 						let sig = Signature::try_from(file.signature.as_slice())
 							.map_err(|err| {
 								println!("\n          !!! failed to parse signature: {err}");
@@ -468,7 +469,7 @@ fn parse_frame<'input>(
 								);
 								println!(
 									"        public key: {}",
-									bs64::encode(&version.public_key)
+									Base64::encode_string(&version.public_key)
 								);
 
 								if let Some(meta) = &version.user_metadata {
@@ -530,17 +531,17 @@ fn parse_frame<'input>(
 					println!(
 						"    digest ({:?}): {}",
 						header.digest_type,
-						bs64::encode(&header.digest)
+						Base64::encode_string(&header.digest)
 					);
 					println!(
 						"    signature ({:?}): {}",
 						header.signature_type,
-						bs64::encode(&header.signature)
+						Base64::encode_string(&header.signature)
 					);
 					println!(
 						"    publickey ({:?}): {}",
 						header.signature_type,
-						bs64::encode(&header.public_key)
+						Base64::encode_string(&header.public_key)
 					);
 
 					let key = VerifyingKey::try_from(header.public_key.as_slice())
