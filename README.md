@@ -162,7 +162,7 @@ Then, to unpack:
 
 ```console
 $ zarc unpack myfirst.zarc
-5 files written
+unpacked 5 files
 ```
 
 ## Features
@@ -183,9 +183,30 @@ Zarc also stores offsets to file contents within the directory, so individual fi
 Zarc computes the cryptographic checksum of every file it packs, and verifies data when it unpacks.
 It also stores and verifies the integrity of its directory using that same hash function.
 
+You can verify integrity cheaply by comparing the digest of the directory only, instead of hashing the entire file.
+For ease of use, external digest verification is built in the tool:
+
+```console
+$ zarc pack --output file.zarc folder/
+digest: puKGv1aG1ANEq7wBxnrJbJ2OPcpBizcG+/sBM89G9fQ=
+
+$ zarc unpack --verify puKGv1aG1ANEq7wBxnrJbJ2OPcpBizcG+/sBM89G9fQ= file.zarc
+unpacked 32 files
+
+$ time zarc unpack --verify qgsB/WyzVCcTH+DWnpUKnFTY22d7hpHewAyBvyv1SB8= file.zarc
+Error:   × integrity failure: zarc file digest is puKGv1aG1ANEq7wBxnrJbJ2OPcpBizcG+/sBM89G9fQ=
+
+Command exited with non-zero status 1
+0.00user 0.00system 0:00.00elapsed 50%CPU (0avgtext+0avgdata 4536maxresident)k
+0inputs+0outputs (0major+199minor)pagefaults 0swaps
+```
+
 Content integrity is per-file; if a Zarc is corrupted but its directory is still readable:
 - you can see exactly which files are affected, and
 - you can safely unpack intact files.
+
+_(not yet implemented)_
+
 
 ### Universal paths
 
@@ -204,6 +225,7 @@ You'd think this wouldn't be a feature but hooo boy are many other formats incon
 If you want to store custom metadata, there's dedicated support:
 
 #### At the archive level
+_(not yet implemented)_
 
 ```console
 $ zarc pack \
@@ -213,6 +235,7 @@ $ zarc pack \
 ```
 
 #### At the file level
+_(not yet implemented)_
 
 ```console
 $ zarc pack \
@@ -222,6 +245,7 @@ $ zarc pack \
 ```
 
 ### Cheap appends
+_(not yet implemented)_
 
 Adding more files to a Zarc is done without recreating the entire archive:
 

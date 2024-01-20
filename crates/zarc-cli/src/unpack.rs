@@ -5,11 +5,12 @@ use std::{
 };
 
 use clap::{Parser, ValueHint};
-use miette::IntoDiagnostic;
+use miette::{bail, IntoDiagnostic};
 use regex::Regex;
 use tracing::{error, info, warn};
 use zarc::{
 	decode::Decoder,
+	integrity::Digest,
 	metadata::decode::{set_ownership, set_permissions, set_timestamps},
 };
 
@@ -27,11 +28,28 @@ pub struct UnpackArgs {
 	/// Can be given multiple times, and files will be matched if they match any of the regexes.
 	#[arg(long, value_name = "REGEX")]
 	pub filter: Vec<Regex>,
+
+	/// Verify that the Zarc directory matches the given digest.
+	#[arg(long, value_name = "DIGEST")]
+	pub verify: Option<String>,
 }
 
 pub(crate) fn unpack(args: UnpackArgs) -> miette::Result<()> {
 	info!("initialise decoder");
 	let mut zarc = Decoder::open(args.input)?;
+
+	if let Some(string) = args.verify {
+		let expected = Digest(bs64::decode(string.as_bytes()).into_diagnostic()?);
+		if expected != zarc.trailer().digest {
+			bail!(
+				"integrity failure: zarc file digest is {}",
+				bs64::encode(&zarc.trailer().digest)
+			);
+		}
+	} else {
+		eprintln!("digest: {}", bs64::encode(&zarc.trailer().digest));
+	}
+
 	zarc.read_directory()?;
 	let zarc = zarc;
 
@@ -39,6 +57,7 @@ pub(crate) fn unpack(args: UnpackArgs) -> miette::Result<()> {
 	// 	info!(offset=%frame.offset, digest=%bs64::encode(frame.digest.as_slice()), "frame");
 	// });
 
+	let mut unpacked = 0_u64;
 	for entry in zarc.files() {
 		let name = entry.name.to_path().display().to_string();
 		if !args.filter.is_empty() && !args.filter.iter().any(|filter| filter.is_match(&name)) {
@@ -62,10 +81,12 @@ pub(crate) fn unpack(args: UnpackArgs) -> miette::Result<()> {
 		} else if entry.is_normal() {
 			if let Some(digest) = &entry.digest {
 				extract_file(entry, digest, &zarc)?;
+				unpacked += 1;
 			}
 		}
 	}
 
+	eprintln!("unpacked {unpacked} files");
 	Ok(())
 }
 
