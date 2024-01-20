@@ -52,6 +52,10 @@ $ ls -lh myfirst.zarc
 $ file myfirst.zarc
 myfirst.zarc: Zstandard compressed data (v0.8+), Dictionary ID: None
 
+# or, with our custom magic:
+$ file -m zarc.magic myfirst.zarc
+crates.zarc: Zarc archive file version 1
+
 $ zstd --test myfirst.zarc
 myfirst.zarc        : 70392 bytes
 ```
