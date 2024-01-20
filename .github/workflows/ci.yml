@@ -30,7 +30,7 @@ jobs:
           - test
           - clippy
 
-    name: ${{ matrix.command }} on ${{ matrix.platform }}
+    name: ${{ matrix.platform }} / ${{ matrix.command }}
     runs-on: "${{ matrix.platform }}-latest"
 
     steps:
