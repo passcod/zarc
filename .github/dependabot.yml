@@ -1,0 +1,22 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: /crates/ozarc
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: /crates/zarc
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: /crates/zarc-cli
+    schedule:
+      interval: weekly

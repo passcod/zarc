@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags-ignore:
+      - "*"
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_UNSTABLE_SPARSE_REGISTRY: "true"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - macos
+          - ubuntu
+          - windows
+        command:
+          - test
+          - clippy
+
+    name: ${{ matrix.command }} on ${{ matrix.platform }}
+    runs-on: "${{ matrix.platform }}-latest"
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Configure toolchain
+      run: |
+        rustup toolchain install --profile minimal --no-self-update stable
+        rustup default stable
+
+    # https://github.com/actions/cache/issues/752
+    - if: ${{ runner.os == 'Windows' }}
+      name: Use GNU tar
+      shell: cmd
+      run: |
+        echo "Adding GNU tar to PATH"
+        echo C:\Program Files\Git\usr\bin>>"%GITHUB_PATH%"
+
+    - name: Cargo caching
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+        key: ${{ runner.os }}-cargo-stable-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-stable-
+          ${{ runner.os }}-cargo-
+
+    - name: Compilation caching
+      uses: actions/cache@v3
+      with:
+        path: target/
+        key: ${{ runner.os }}-target-stable-${{ hashFiles('**/Cargo.lock') }}
+
+    - run: cargo ${{ matrix.command }}
+
+  tests-pass:
+    if: always()
+    name: Tests pass
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: re-actors/alls-green@release/v1
+      with:
+        jobs: ${{ toJSON(needs) }}
