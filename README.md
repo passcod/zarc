@@ -4,7 +4,7 @@ Zarc is a new archive file format.
 Think like `tar` or `zip`, not `gzip` or `xz`.
 
 **Warning:**
-Zarc is a toy: it has received no review, only has a single implementation, currently loads files entirely in memory, and generally has not been optimised.
+Zarc is a toy: it has received no review, only has a single implementation, and is missing many important features.
 Do not use for production data.
 
 Zarc provides some interesting features, like:
