@@ -189,7 +189,6 @@ pub fn posix_mode(meta: &Metadata) -> Option<u32> {
 /// - `hidden` for `FILE_ATTRIBUTE_HIDDEN`
 /// - `not-content-indexed` for `FILE_ATTRIBUTE_NOT_CONTENT_INDEXED` (opts the file out of content
 ///   indexing from Windows' crawlers, e.g. for the search functionality in Explorer and Start)
-/// - `sparse` for `FILE_ATTRIBUTE_SPARSE`
 /// - `system` for `FILE_ATTRIBUTE_SYSTEM`
 /// - `temporary` for `FILE_ATTRIBUTE_TEMPORARY`
 ///
@@ -278,7 +277,7 @@ pub fn file_attributes(
 
 		let flags = FileSystem::FILE_FLAGS_AND_ATTRIBUTES(meta.file_attributes());
 
-		return attrs.extend(
+		attrs.extend(
 			[
 				(
 					"archived",
@@ -298,7 +297,6 @@ pub fn file_attributes(
 					flags.contains(FileSystem::FILE_ATTRIBUTE_NOT_CONTENT_INDEXED),
 				),
 				("system", flags.contains(FileSystem::FILE_ATTRIBUTE_SYSTEM)),
-				("sparse", flags.contains(FileSystem::FILE_ATTRIBUTE_SPARSE)),
 				(
 					"temporary",
 					flags.contains(FileSystem::FILE_ATTRIBUTE_TEMPORARY),
