@@ -1,6 +1,6 @@
 [package]
 name = "zarc-cli"
-version = "0.0.1"
+version = "0.0.0"
 edition = "2021"
 
 authors = ["Félix Saparelli <felix@passcod.name>"]
@@ -11,7 +11,6 @@ categories = ["command-line-utilities"]
 
 documentation = "https://github.com/passcod/zarc"
 repository = "https://github.com/passcod/zarc"
-readme = "README.md"
 
 [package.metadata.wix]
 upgrade-guid = "96E0968E-C5AC-4BFF-81DE-948816F542C8"
@@ -31,13 +30,13 @@ clap = { version = "4.4.11", features = ["derive", "cargo", "wrap_help", "string
 deku = { version = "0.16.0", features = ["logging"], git = "https://github.com/sharksforarms/deku" }
 miette = { version = "5.10.0", features = ["fancy"] }
 minicbor = { version = "0.20.0", features = ["std"] }
-ozarc = { version = "0.0.1", path = "../ozarc" }
+ozarc = { version = "0.0.0", path = "../ozarc" }
 regex = "1.10.2"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "json"] }
 umask = "2.1.0"
 walkdir = "2.4.0"
-zarc = { version = "0.0.1", path = "../zarc" }
+zarc = { version = "0.0.0", path = "../zarc" }
 zstd-safe = { version = "7.0.0", features = ["experimental"] }
 
 [build-dependencies]
