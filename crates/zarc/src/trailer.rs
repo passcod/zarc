@@ -189,11 +189,12 @@ impl Epilogue {
 			return Err(self.full_length() - all_bytes.len());
 		}
 
-		let head = all_bytes.len() - self.full_length();
-		let digest = self.digest_type.digest_len();
+		let head = all_bytes.len() - (self.digest_type.digest_len() + EPILOGUE_LENGTH);
+		let size = self.digest_type.digest_len();
+		let digest = all_bytes[head..(head + size)].to_vec();
 
 		Ok(Trailer {
-			digest: Digest(all_bytes[head..digest].to_vec()),
+			digest: Digest(digest),
 			digest_type: self.digest_type,
 			directory_offset: self.directory_offset,
 			directory_uncompressed_size: self.directory_uncompressed_size,
