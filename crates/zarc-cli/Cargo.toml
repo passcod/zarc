@@ -36,4 +36,4 @@ zstd-safe = { version = "7.0.0", features = ["experimental"] }
 
 [build-dependencies]
 bosion = "1.0.2"
-embed-resource = "2.4.0"
+embed-resource = "2.4.1"
