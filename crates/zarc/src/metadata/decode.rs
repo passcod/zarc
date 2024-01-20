@@ -1,11 +1,8 @@
 //! Helpers to write file metadata when decoding [`File`](directory::File)s.
 
-use std::{
-	fs::{File as FsFile, FileTimes, Permissions},
-	os::fd::AsRawFd,
-};
+use std::fs::{File as FsFile, FileTimes, Permissions};
 
-use tracing::{instrument, trace};
+use tracing::instrument;
 
 use crate::directory::{File, Timestamps};
 
@@ -82,6 +79,8 @@ pub fn set_permissions(permissions: &mut Permissions, meta: &File) -> std::io::R
 pub fn set_ownership(file: &FsFile, meta: &File) -> std::io::Result<()> {
 	#[cfg(unix)]
 	{
+		use std::os::fd::AsRawFd;
+
 		let uid = meta
 			.user
 			.as_ref()
@@ -97,7 +96,7 @@ pub fn set_ownership(file: &FsFile, meta: &File) -> std::io::Result<()> {
 			.flatten();
 
 		let fd = file.as_raw_fd();
-		trace!(%fd, ?uid, ?gid, "setting ownership");
+		tracing::trace!(%fd, ?uid, ?gid, "setting ownership");
 		nix::unistd::fchown(fd, uid, gid)?;
 	}
 
