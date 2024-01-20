@@ -250,14 +250,8 @@ pub fn file_attributes(
 	))]
 	{
 		use nix::sys::stat::{stat, FileFlag};
-		struct BitFlags(u32);
-		impl BitFlags {
-			fn contains(&self, other: u32) -> bool {
-				self.0 & other != 0
-			}
-		}
 
-		let flags = BitFlags(stat(path)?.st_flags);
+		let flags = FileFlag::from_bits_retain(stat(path)?.st_flags);
 		attrs.extend(
 			[
 				(
