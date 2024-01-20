@@ -51,7 +51,7 @@ jobs:
     - if: ${{ runner.os == 'Linux' }}
       run: |
         sudo apt-get update
-        sudo apt-get install -y e2fsprogs-dev
+        sudo apt-get install -y libext2fs-dev
 
     - name: Cargo caching
       uses: actions/cache@v3
