@@ -250,14 +250,21 @@ pub fn file_attributes(
 	))]
 	{
 		use nix::sys::stat::{stat, FileFlag};
-		let flags = stat(path)?.st_flags;
+		struct BitFlags(u32);
+		impl BitFlags {
+			fn contains(&self, other: u32) -> bool {
+				self.0 & other != 0
+			}
+		}
+
+		let flags = BitFlags(stat(path)?.st_flags);
 		attrs.extend(
 			[
 				(
 					"append-only",
-					flags.contains(FileFlag::SF_APPEND) || flags.contains(FileFlags::UF_APPEND),
+					flags.contains(FileFlag::SF_APPEND) || flags.contains(FileFlag::UF_APPEND),
 				),
-				("archived", flags.contains(FileFlag::ARCHIVED)),
+				("archived", flags.contains(FileFlag::SF_ARCHIVED)),
 				(
 					"immutable",
 					flags.contains(FileFlag::SF_IMMUTABLE)
@@ -275,30 +282,39 @@ pub fn file_attributes(
 	{
 		use std::os::windows::fs::MetadataExt;
 		use windows::Win32::Storage::FileSystem;
+		struct BitFlags(u32);
+		impl BitFlags {
+			fn contains(&self, other: u32) -> bool {
+				self.0 & other != 0
+			}
+		}
 
-		let attrs = meta.file_attributes();
+		let flags = BitFlags(meta.file_attributes());
 
 		return attrs.extend(
 			[
-				("archived", attrs & FileSystem::FILE_ATTRIBUTE_ARCHIVE != 0),
+				(
+					"archived",
+					flags.contains(FileSystem::FILE_ATTRIBUTE_ARCHIVE),
+				),
 				(
 					"compressed",
-					attrs & FileSystem::FILE_ATTRIBUTE_COMPRESSED != 0,
+					flags.contains(FileSystem::FILE_ATTRIBUTE_COMPRESSED),
 				),
 				(
 					"encrypted",
-					attrs & FileSystem::FILE_ATTRIBUTE_ENCRYPTED != 0,
+					flags.contains(FileSystem::FILE_ATTRIBUTE_ENCRYPTED),
 				),
-				("hidden", attrs & FileSystem::FILE_ATTRIBUTE_HIDDEN != 0),
+				("hidden", flags.contains(FileSystem::FILE_ATTRIBUTE_HIDDEN)),
 				(
 					"not-content-indexed",
-					attrs & FileSystem::FILE_ATTRIBUTE_NOT_CONTENT_INDEXED != 0,
+					flags.contains(FileSystem::FILE_ATTRIBUTE_NOT_CONTENT_INDEXED),
 				),
-				("system", attrs & FileSystem::FILE_ATTRIBUTE_SYSTEM != 0),
-				("sparse", attrs & FileSystem::FILE_ATTRIBUTE_SPARSE != 0),
+				("system", flags.contains(FileSystem::FILE_ATTRIBUTE_SYSTEM)),
+				("sparse", flags.contains(FileSystem::FILE_ATTRIBUTE_SPARSE)),
 				(
 					"temporary",
-					attrs & FileSystem::FILE_ATTRIBUTE_TEMPORARY != 0,
+					flags.contains(FileSystem::FILE_ATTRIBUTE_TEMPORARY),
 				),
 			]
 			.into_iter()
@@ -340,23 +356,29 @@ pub fn file_attributes(
 ///
 #[instrument(level = "trace")]
 pub fn file_extended_attributes(path: &Path) -> Result<Option<HashMap<String, AttributeValue>>> {
-	if xattr::SUPPORTED_PLATFORM {
-		let list = xattr::list(path)?;
-		let size_hint = list.size_hint();
-		let mut map = HashMap::with_capacity(size_hint.1.unwrap_or(size_hint.0));
-		for osname in list {
-			match osname.to_str() {
-				None => error!(?osname, ?path, "not storing non-Unicode xattr"),
-				Some(name) => {
-					if let Some(value) = xattr::get(path, &osname)? {
-						map.insert(name.to_string(), CborString::from_maybe_utf8(value).into());
+	#[cfg(unix)]
+	{
+		if xattr::SUPPORTED_PLATFORM {
+			let list = xattr::list(path)?;
+			let size_hint = list.size_hint();
+			let mut map = HashMap::with_capacity(size_hint.1.unwrap_or(size_hint.0));
+			for osname in list {
+				match osname.to_str() {
+					None => error!(?osname, ?path, "not storing non-Unicode xattr"),
+					Some(name) => {
+						if let Some(value) = xattr::get(path, &osname)? {
+							map.insert(name.to_string(), CborString::from_maybe_utf8(value).into());
+						}
 					}
 				}
 			}
-		}
 
-		Ok(Some(map))
-	} else {
-		Ok(None)
+			Ok(Some(map))
+		} else {
+			Ok(None)
+		}
 	}
+
+	#[cfg(not(unix))]
+	Ok(None)
 }

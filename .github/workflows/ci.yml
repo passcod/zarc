@@ -48,6 +48,11 @@ jobs:
         echo "Adding GNU tar to PATH"
         echo C:\Program Files\Git\usr\bin>>"%GITHUB_PATH%"
 
+    - if: ${{ runner.os == 'Linux' }}
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y e2fsprogs-dev
+
     - name: Cargo caching
       uses: actions/cache@v3
       with:
