@@ -11,6 +11,7 @@ on:
 
 jobs:
   release-plz:
+    if: false
     name: Release-plz
     runs-on: ubuntu-latest
     steps:
