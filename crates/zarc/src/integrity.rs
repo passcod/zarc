@@ -10,6 +10,7 @@ use minicbor::{data::Type, Decode, Decoder, Encode, Encoder};
 /// Currently only BLAKE3 is supported, but this type is designed to be generic over algorithms.
 ///
 /// The `PartialEq` and `Eq` implementations are constant-time.
+#[allow(clippy::derived_hash_with_manual_eq)]
 #[derive(Clone, Debug, Eq, Hash, DekuWrite)]
 pub struct Digest(pub Vec<u8>);
 
