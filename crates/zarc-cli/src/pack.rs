@@ -264,6 +264,8 @@ pub(crate) fn pack(args: PackArgs) -> std::io::Result<()> {
 	}
 
 	info!("finalising zarc");
-	zarc.finalise()?;
+	let digest = zarc.finalise()?;
+
+	println!("digest: {}", bs64::encode(&digest));
 	Ok(())
 }

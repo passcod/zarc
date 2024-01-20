@@ -35,9 +35,9 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 
 	/// Write the directory and trailer.
 	///
-	/// Flushes the writer and drops all state.
+	/// Flushes the writer and drops all state, returns the digest of the directory.
 	#[instrument(level = "debug", skip(self))]
-	pub fn finalise(mut self) -> Result<()> {
+	pub fn finalise(mut self) -> Result<Digest> {
 		let mut directory = Vec::new();
 		let digest_type = DigestType::Blake3;
 		let mut hasher = Hasher::new(); // TODO: get hasher from DigestType
@@ -90,7 +90,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 
 		let digest = hasher.finalize();
 		trace!(?digest, "hashed directory");
-		let digest = digest.as_bytes();
+		let digest = Digest(digest.as_bytes().to_vec());
 
 		let bytes = self.write_compressed_frame(&directory)?;
 		trace!(%bytes, "wrote directory");
@@ -100,7 +100,7 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 			digest_type,
 			directory_offset: 0,
 			directory_uncompressed_size: directory.len() as _,
-			digest: Digest(digest.to_vec()),
+			digest: digest.clone(),
 		};
 		trailer.directory_offset = -((bytes + SKIPPABLE_FRAME_OVERHEAD + trailer.len()) as i64);
 		trace!(?trailer, "built trailer");
@@ -118,6 +118,6 @@ impl<'writer, W: Write> Encoder<'writer, W> {
 		self.writer.flush()?;
 		trace!("flushed writer");
 
-		Ok(())
+		Ok(digest)
 	}
 }
