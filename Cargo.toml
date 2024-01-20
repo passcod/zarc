@@ -21,6 +21,10 @@ targets = [
 ]
 pr-run-mode = "plan"
 hosting = ["axodotdev"]
+unix-archive = ".tar.zstd"
+
+[workspace.metadata.dist.dependencies.apt]
+libext2fs-dev = '*'
 
 [profile.release]
 lto = true
