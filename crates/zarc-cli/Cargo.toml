@@ -29,7 +29,7 @@ chrono = "0.4.31"
 clap = { version = "4.4.11", features = ["derive", "cargo", "wrap_help", "string"] }
 deku = { version = "0.16.0", features = ["logging"], git = "https://github.com/sharksforarms/deku" }
 miette = { version = "5.10.0", features = ["fancy"] }
-minicbor = { version = "0.20.0", features = ["std"] }
+minicbor = { version = "0.21.0", features = ["std"] }
 ozarc = { version = "0.0.0", path = "../ozarc" }
 regex = "1.10.3"
 tracing = "0.1.40"
