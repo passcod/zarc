@@ -17,7 +17,7 @@ blake3 = "1.5.0"
 chrono = "0.4.31"
 deku = { version = "0.16.0", features = ["logging"], git = "https://github.com/sharksforarms/deku" }
 log = "0.4.20"
-miette = "5.10.0"
+miette = "7.2.0"
 minicbor = { version = "0.20.0", features = ["derive", "std"] }
 ozarc = { version = "0.0.0", path = "../ozarc" }
 subtle = "2.5.0"
