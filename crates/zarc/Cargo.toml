@@ -21,7 +21,7 @@ miette = "5.10.0"
 minicbor = { version = "0.20.0", features = ["derive", "std"] }
 ozarc = { version = "0.0.0", path = "../ozarc" }
 subtle = "2.5.0"
-thiserror = "1.0.56"
+thiserror = "1.0.58"
 tracing = "0.1.40"
 visibility = "0.1.0"
 zstd = "0.13.0"
