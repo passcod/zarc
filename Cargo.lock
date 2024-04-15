@@ -424,7 +424,7 @@ dependencies = [
 [[package]]
 name = "deku"
 version = "0.16.0"
-source = "git+https://github.com/sharksforarms/deku#1e96f86ed4283ae270515257107205863eb5c14b"
+source = "git+https://github.com/sharksforarms/deku#6df1a1bc2c941de4e780570d3877c4490c270a9e"
 dependencies = [
  "bitvec",
  "deku_derive",
@@ -435,7 +435,7 @@ dependencies = [
 [[package]]
 name = "deku_derive"
 version = "0.16.0"
-source = "git+https://github.com/sharksforarms/deku#1e96f86ed4283ae270515257107205863eb5c14b"
+source = "git+https://github.com/sharksforarms/deku#6df1a1bc2c941de4e780570d3877c4490c270a9e"
 dependencies = [
  "darling",
  "proc-macro-crate",
